@@ -39,6 +39,27 @@ class TestCors:
         response = client.get("/places", headers={"Origin": "https://evil.example"})
         assert "access-control-allow-origin" not in response.headers
 
+    @pytest.mark.parametrize(
+        "origin", ["http://localhost:61234", "http://127.0.0.1:8080", "http://localhost", "https://localhost:443"]
+    )
+    def test_any_localhost_port_allowed(self, client, origin):
+        # `flutter run -d chrome` serves the app on a random port.
+        response = client.options(
+            "/places", headers={"Origin": origin, "Access-Control-Request-Method": "GET"}
+        )
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == origin
+
+    @pytest.mark.parametrize(
+        "origin", ["http://localhost.evil.com", "http://evil.com/localhost", "http://192.168.0.5:3000"]
+    )
+    def test_lookalike_origins_rejected(self, client, origin):
+        response = client.get("/places", headers={"Origin": origin})
+        assert "access-control-allow-origin" not in response.headers
+
+    def test_localhost_regex_can_be_disabled(self):
+        assert Settings(_env_file=None, cors_allow_localhost=False).cors_origin_regex() is None
+
     def test_origins_parsing(self):
         config = Settings(_env_file=None, cors_origins=" http://a.test/ , http://b.test,, ")
         assert config.cors_origin_list() == ["http://a.test", "http://b.test"]

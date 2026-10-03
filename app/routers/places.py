@@ -27,10 +27,16 @@ def place_filter(
     power_outlets: bool | None = None,
     atmosphere: Atmosphere | None = None,
     min_rating: Annotated[float | None, Query(ge=1, le=5)] = None,
+    min_price: Annotated[int | None, Query(ge=0, description="PLN; price_range.min >= this")] = None,
+    max_price: Annotated[
+        int | None, Query(ge=0, description="PLN; price_range.max <= this (0 = free places only)")
+    ] = None,
     open_now: Annotated[bool, Query(description="Only places open right now (unknown hours excluded)")] = False,
 ) -> repo.PlaceFilter:
     if (lat is None) != (lon is None):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Provide both lat and lon, or neither")
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "min_price cannot exceed max_price")
     return repo.PlaceFilter(
         near=Coordinates(lat=lat, lon=lon) if lat is not None else None,
         radius_m=radius_m,
@@ -39,6 +45,8 @@ def place_filter(
         power_outlets=power_outlets,
         atmosphere=atmosphere,
         min_rating=min_rating,
+        min_price=min_price,
+        max_price=max_price,
         open_at=local_now() if open_now else None,
     )
 

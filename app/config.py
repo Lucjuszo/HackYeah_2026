@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # --- Frontend
     # Comma-separated origins allowed to call the API from a browser (CORS). "*" allows any.
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    # Also allow http(s)://localhost or 127.0.0.1 on ANY port: `flutter run -d chrome` picks a random one.
+    # Turn off in production.
+    cors_allow_localhost: bool = True
     # Public address of this API, e.g. "https://api.example.com". Photo URLs become absolute
     # (frontend on another origin can use them in <img src> as is). Unset: relative "/media/...".
     public_base_url: str | None = None
@@ -72,6 +75,9 @@ class Settings(BaseSettings):
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    def cors_origin_regex(self) -> str | None:
+        return r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$" if self.cors_allow_localhost else None
 
     def media_url_prefix(self) -> str:
         base = self.public_base_url.rstrip("/") if self.public_base_url else ""

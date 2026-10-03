@@ -1,4 +1,5 @@
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import datetime, time, timedelta
 from enum import IntEnum
 from typing import Annotated, Self
 
@@ -40,6 +41,21 @@ class OpeningPeriod(BaseModel):
         return self
 
 
+@dataclass
+class OpenStatus:
+    open_now: bool
+    closes_at: datetime | None = None  # when open: end of the current opening (None = always open)
+    opens_at: datetime | None = None  # when closed: start of the next opening within a week (None = never)
+
+
+def _at(day: datetime, hhmm: str) -> datetime:
+    """`hhmm` on the date of `day`, in its time zone; "24:00" is the next midnight."""
+    if hhmm == "24:00":
+        return datetime.combine(day.date() + timedelta(days=1), time(0), day.tzinfo)
+    hours, minutes = map(int, hhmm.split(":"))
+    return datetime.combine(day.date(), time(hours, minutes), day.tzinfo)
+
+
 class OpeningHours(BaseModel):
     always_open: bool = False
     periods: list[OpeningPeriod] = []
@@ -51,9 +67,28 @@ class OpeningHours(BaseModel):
         self.periods.sort(key=lambda p: (p.day, p.open))
         return self
 
-    def is_open_at(self, local: datetime) -> bool:
-        """`local` in the place's time zone."""
+
+    def status_at(self, local: datetime) -> OpenStatus:
+        """Open now? Until when / from when. Overnight hours stored as two periods count as one opening."""
         if self.always_open:
-            return True
-        hhmm = local.strftime("%H:%M")
-        return any(p.day == local.weekday() and p.open <= hhmm < p.close for p in self.periods)
+            return OpenStatus(open_now=True)
+        # Concrete openings from yesterday (may run past midnight) to a week ahead, merged where they touch.
+        openings: list[list[datetime]] = []
+        for offset in range(-1, 8):
+            day = local + timedelta(days=offset)
+            for period in self.periods:
+                if period.day != day.weekday():
+                    continue
+                start, end = _at(day, period.open), _at(day, period.close)
+                if openings and start <= openings[-1][1]:
+                    openings[-1][1] = max(openings[-1][1], end)
+                else:
+                    openings.append([start, end])
+        horizon = _at(local + timedelta(days=7), "24:00")
+        for start, end in openings:
+            if start <= local < end:
+                # Open around the clock for the whole week we look at: no closing time to show.
+                return OpenStatus(open_now=True, closes_at=end if end < horizon else None)
+            if start > local:
+                return OpenStatus(open_now=False, opens_at=start)
+        return OpenStatus(open_now=False)

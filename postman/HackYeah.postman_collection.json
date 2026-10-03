@@ -212,6 +212,47 @@
       ]
     },
     {
+      "name": "CORS preflight from Flutter web (random localhost port)",
+      "request": {
+        "method": "OPTIONS",
+        "header": [
+          {
+            "key": "Origin",
+            "value": "http://localhost:61234"
+          },
+          {
+            "key": "Access-Control-Request-Method",
+            "value": "GET"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/places",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "places"
+          ]
+        },
+        "auth": {
+          "type": "noauth"
+        },
+        "description": "flutter run -d chrome serves on a random port; CORS_ALLOW_LOCALHOST=true allows any localhost port."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Origin allowed\", () => pm.expect(pm.response.headers.get(\"Access-Control-Allow-Origin\")).to.eql(\"http://localhost:61234\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "0. Auth",
       "description": "You don't have to run these: the collection logs in automatically before any request (anna = user, bartek = second user, boss = admin; needs AUTH_DEV_LOGIN=true). These requests do the same explicitly. For a real OAuth login set `autoLogin` to `off`, open {{baseUrl}}/auth/github/login in a browser and paste access_token into the `token` variable.",
       "item": [
@@ -1104,6 +1145,167 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – up to 30 zł (max_price)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/summary?max_price=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "max_price",
+                  "value": "30"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Frontend chips: Bezpłatne → max_price=0, Do 30 zł → max_price=30, Powyżej 30 zł → min_price=30."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Every price_range.max <= 30\", () => pm.response.json().forEach(p => pm.expect(p.price_range.max).to.be.at.most(30)));",
+                  "pm.test(\"Created place (0-30) included\", () => pm.expect(pm.response.json().map(p => p.id)).to.include(pm.collectionVariables.get(\"placeId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – from 30 zł (min_price)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/summary?min_price=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "min_price",
+                  "value": "30"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Every price_range.min >= 30\", () => pm.response.json().forEach(p => pm.expect(p.price_range.min).to.be.at.least(30)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – min_price > max_price → 422",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places?min_price=60&max_price=30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places"
+              ],
+              "query": [
+                {
+                  "key": "min_price",
+                  "value": "60"
+                },
+                {
+                  "key": "max_price",
+                  "value": "30"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Summary – opening status (closes_at / opens_at)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/summary?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "closes_at = 'Otwarte do ...', opens_at = 'Zamknięte, otwiera ...'. ISO 8601 with the Europe/Warsaw offset."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"closes_at only when open, opens_at only when closed\", () => pm.response.json().forEach(p => {",
+                  "  if (p.open_now === true) pm.expect(p.opens_at).to.be.null;",
+                  "  if (p.open_now === false) pm.expect(p.closes_at).to.be.null;",
+                  "  if (p.open_now === null) { pm.expect(p.closes_at).to.be.null; pm.expect(p.opens_at).to.be.null; }",
+                  "}));"
                 ]
               }
             }

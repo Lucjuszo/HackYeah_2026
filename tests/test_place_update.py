@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 from bson import ObjectId
 
@@ -31,7 +33,8 @@ def test_records_editor_and_time(client, created_place):
     updated = patch(client, created_place["id"], {"name": "X"}, user="bartek").json()
     assert updated["updated_by"] == "bartek"
     assert updated["created_by"] == DEFAULT_USER
-    assert updated["updated_at"] >= created_place["updated_at"]
+    # As datetimes: "...:00Z" (whole second) sorts after "...:00.5Z" as a string.
+    assert datetime.fromisoformat(updated["updated_at"]) >= datetime.fromisoformat(created_place["updated_at"])
 
 
 def test_response_matches_stored_place(client, created_place):

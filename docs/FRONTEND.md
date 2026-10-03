@@ -1,16 +1,21 @@
 # Integracja z frontem
 
-Kontrakt API: `http://localhost:8000/docs` (Swagger) i `/openapi.json`. Typy TypeScript:
+Front: Flutter (`frontend/`). Kontrakt API: `http://localhost:8000/docs` (Swagger) i `/openapi.json`.
 
-```bash
-npx openapi-typescript http://localhost:8000/openapi.json -o src/api/schema.d.ts
-```
+- Adres API do aplikacji przez `--dart-define`, nie na sztywno w kodzie:
+  `flutter run -d chrome --dart-define=API_URL=http://localhost:8000`
+  → `const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://localhost:8000');`
+- Flutter web (Chrome): CORS przepuszcza każdy port `localhost` (`CORS_ALLOW_LOCALHOST`).
+  Aplikacja Windows (`flutter run -d windows`): CORS jej nie dotyczy.
+- Daty (`created_at`, `closes_at`, ...) to ISO 8601 z offsetem → `DateTime.parse(...).toLocal()`.
+- Opcjonalnie klient Dart z OpenAPI: `npx @openapitools/openapi-generator-cli generate -i http://localhost:8000/openapi.json -g dart -o frontend/api_client`.
 
 ## Konfiguracja backendu (`.env`)
 
 | Zmienna | Przykład | Po co |
 |---|---|---|
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | adresy frontu, które mogą wołać API z przeglądarki (domyślnie te dwa) |
+| `CORS_ORIGINS` | `https://app.example.com` | adresy frontu, które mogą wołać API z przeglądarki |
+| `CORS_ALLOW_LOCALHOST` | `true` (domyślnie) | dodatkowo `localhost` / `127.0.0.1` na **dowolnym porcie** – `flutter run -d chrome` losuje port. Na produkcji `false` |
 | `PUBLIC_BASE_URL` | `http://localhost:8000` | adresy zdjęć stają się pełne (`http://localhost:8000/media/...`); bez tego są względne `/media/...` |
 | `AUTH_REDIRECT_URL` | `http://localhost:5173/auth/callback` | strona frontu, na którą wraca logowanie OAuth |
 | `AUTH_DEV_LOGIN` | `true` | lokalnie: logowanie bez OAuth (`POST /auth/dev-login`) |
@@ -26,6 +31,11 @@ npx openapi-typescript http://localhost:8000/openapi.json -o src/api/schema.d.ts
 6. **`401` = token wygasł lub jest zły** (żyje 24 h, odświeżania nie ma): usuń token i pokaż logowanie.
 
 Lokalnie bez OAuth: `POST /auth/dev-login` z `{"name": "anna", "role": "user"}` → ten sam `access_token`.
+**Na start integracji polecane** – działa identycznie w Chrome i w aplikacji Windows.
+
+Kroki 2–3 (przekierowania) działają we Flutter web. W aplikacji Windows nie ma paska adresu, do którego
+backend mógłby wrócić – tam OAuth wymaga osobnego rozwiązania (np. `AUTH_REDIRECT_URL=http://localhost:<port>/`
+nasłuchiwany przez aplikację); do ustalenia, jeśli wersja desktopowa będzie potrzebna.
 
 ## Miejsca
 
@@ -46,6 +56,7 @@ Parametry wyszukiwania (te same dla `/places` i `/places/summary`):
 | `wifi`, `power_outlets` | `true` / `false` |
 | `atmosphere` | `quiet` / `chatty` / `lively` |
 | `min_rating` | 1–5 |
+| `min_price`, `max_price` | PLN, po `price_range` (patrz niżej) |
 | `open_now` | `true` = otwarte teraz (czas `Europe/Warsaw`); miejsca bez godzin pomijane |
 | `sort` | `distance` (domyślne z `lat`/`lon`), `rating`, `name`, `newest`, `oldest` (domyślne bez punktu) |
 | `limit`, `skip` | paginacja |
@@ -53,7 +64,27 @@ Parametry wyszukiwania (te same dla `/places` i `/places/summary`):
 **Paginacja:** łączna liczba wyników jest w nagłówku `X-Total-Count` (`/places`, `/places/summary`,
 `/places/{id}/comments`). CORS go udostępnia: `Number(res.headers.get("X-Total-Count"))`.
 
-`open_now` w `/places/summary`: `true` / `false` / `null` (godziny nieznane).
+Godziny w `/places/summary`:
+
+| Pole | Znaczenie |
+|---|---|
+| `open_now` | `true` / `false` / `null` (godziny nieznane) |
+| `closes_at` | gdy otwarte: koniec bieżącego otwarcia, np. `2026-10-07T20:00:00+02:00` → „Otwarte do 20:00”; `null` = non-stop |
+| `opens_at` | gdy zamknięte: najbliższe otwarcie w ciągu tygodnia → „Zamknięte, otwiera o 9:00” / „w pon. 9:00” |
+
+Godziny po północy (np. pt 20:00–sob 02:00) są liczone jako jedno otwarcie.
+
+### Ceny
+
+`usage_price` to tekst wpisany przez użytkownika (`"0-30"`, `"60+"`, `"za darmo"`). Backend wylicza z niego
+`price_range: {min, max}` w PLN (`max: null` = „od X wzwyż”; `price_range: null`, gdy tekstu nie da się
+odczytać, np. „tanio” – takie miejsca nie łapią się w filtry cen). Filtry:
+
+| Chip na froncie | Parametry |
+|---|---|
+| Bezpłatne | `max_price=0` |
+| Do 30 zł | `max_price=30` |
+| Powyżej 30 zł | `min_price=30` |
 
 ## Zdjęcia
 

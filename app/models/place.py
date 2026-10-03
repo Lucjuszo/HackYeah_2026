@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Self
@@ -83,6 +84,34 @@ class MenuItem(BaseModel):
     currency: CurrencyCode = "PLN"
 
 
+class PriceRange(BaseModel):
+    """`usage_price` as numbers (PLN), for filtering and display. max None = open-ended ("60+")."""
+
+    min: int
+    max: int | None
+
+
+_PRICE = re.compile(r"^(\d+)\s*(?:(?:-|–)\s*(\d+)|(\+))?\s*(?:zł|zl|pln)?$", re.IGNORECASE)
+_FREE = {"free", "0", "bezpłatne", "bezplatne", "darmowe", "za darmo"}
+
+
+def parse_usage_price(text: str | None) -> PriceRange | None:
+    """'0-30' -> 0..30, '60+' -> 60..None, '20 zł' -> 20..20, 'za darmo' -> 0..0; anything else -> None."""
+    if text is None:
+        return None
+    text = text.strip()
+    if text.lower() in _FREE:
+        return PriceRange(min=0, max=0)
+    match = _PRICE.match(text)
+    if match is None:
+        return None
+    low = int(match[1])
+    if match[3]:
+        return PriceRange(min=low, max=None)
+    high = int(match[2]) if match[2] else low
+    return PriceRange(min=min(low, high), max=max(low, high))
+
+
 class PlaceCreate(BaseModel):
     name: NonEmptyStr
     address: Address
@@ -90,7 +119,11 @@ class PlaceCreate(BaseModel):
     amenities: Amenities = Amenities()
     opening_hours: OpeningHours | None = Field(None, description="None = unknown")
     # Fee for using the place (not menu prices). Free-form until the price model is settled.
-    usage_price: NonEmptyStr | None = Field(None, examples=["0-30", "30-60", "60-90"])
+    usage_price: NonEmptyStr | None = Field(
+        None,
+        examples=["0-30", "30-60", "60+", "za darmo"],
+        description="PLN per visit. 'A-B', 'A+' or 'za darmo' also fill `price_range` (used by price filters)",
+    )
     atmosphere: Atmosphere | None = None
     features: Features = Field([], description="User-defined extras shown on the place card, e.g. 'Pokoje wygłuszane'")
     menu: list[MenuItem] = []
@@ -179,6 +212,7 @@ class Place(PlaceCreate):
     created_at: datetime
     updated_at: datetime
     distance_m: float | None = Field(None, description="Distance from the searched point; only in searches by lat/lon")
+    price_range: PriceRange | None = Field(None, description="Parsed `usage_price`; None if missing or free text")
 
 
 class PlaceSummary(BaseModel):
@@ -190,10 +224,15 @@ class PlaceSummary(BaseModel):
     coordinates: Coordinates
     amenities: Amenities
     usage_price: str | None = None
+    price_range: PriceRange | None = None
     atmosphere: Atmosphere | None = None
     rating: RatingSummary
     thumbnail_url: str | None = Field(None, description="Thumbnail of the first photo")
     photo_count: int = 0
     open_now: bool | None = Field(None, description="None = opening hours unknown")
+    closes_at: datetime | None = Field(
+        None, description="When open: end of the current opening, local time with offset (None = non-stop)"
+    )
+    opens_at: datetime | None = Field(None, description="When closed: next opening within a week")
     is_mock: bool = False
     distance_m: float | None = None

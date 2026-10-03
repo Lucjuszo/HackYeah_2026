@@ -22,6 +22,7 @@ from app.models.place import (
     PlaceSort,
     PlaceSummary,
     PlaceUpdate,
+    parse_usage_price,
 )
 from app.storage import get_storage
 
@@ -40,6 +41,12 @@ def _geo_point(coordinates: Coordinates) -> dict[str, Any]:
     return {"type": "Point", "coordinates": [coordinates.lon, coordinates.lat]}
 
 
+def _price_range(usage_price: str | None) -> dict[str, Any] | None:
+    """Stored next to usage_price so price filters are plain indexed queries."""
+    parsed = parse_usage_price(usage_price)
+    return parsed.model_dump() if parsed else None
+
+
 def _menu(menu: list[MenuItem]) -> list[dict[str, Any]]:
     return [item.model_dump(exclude_none=True) for item in menu]
 
@@ -52,6 +59,7 @@ def to_document(
         **place.model_dump(mode="json", include=_PLAIN_FIELDS),
         "address": place.address.model_dump(exclude_none=True),
         "location": _geo_point(place.coordinates),
+        "price_range": _price_range(place.usage_price),
         "menu": _menu(place.menu),
         "photos": [],
         "rating": {"average": None, "count": 0},
@@ -88,6 +96,8 @@ def to_update_operations(update: PlaceUpdate, user_id: str) -> dict[str, Any]:
         to_set["location"] = _geo_point(update.coordinates)
     if "menu" in fields:
         to_set["menu"] = _menu(update.menu)
+    if "usage_price" in fields:
+        to_set["price_range"] = _price_range(update.usage_price)
     if "osm" in fields:
         if update.osm:
             to_set["osm"] = update.osm.model_dump(mode="json")
@@ -123,6 +133,7 @@ def from_document(doc: dict[str, Any]) -> Place:
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
         distance_m=doc.get("distance_m"),
+        price_range=doc.get("price_range"),
     )
 
 
@@ -164,6 +175,19 @@ async def ensure_indexes(db: AsyncDatabase) -> None:
         unique=True,
         partialFilterExpression={"osm.id": {"$exists": True}},
     )
+    await places.create_index([("price_range.min", 1), ("price_range.max", 1)])
+    await backfill_price_ranges(db)
+
+
+async def backfill_price_ranges(db: AsyncDatabase) -> int:
+    """Fills `price_range` in places stored before it existed. Idempotent; returns how many were updated."""
+    updated = 0
+    async for doc in db[COLLECTION].find({"price_range": {"$exists": False}}, projection={"usage_price": 1}):
+        await db[COLLECTION].update_one(
+            {"_id": doc["_id"]}, {"$set": {"price_range": _price_range(doc.get("usage_price"))}}
+        )
+        updated += 1
+    return updated
 
 
 async def place_exists(db: AsyncDatabase, place_id: ObjectId) -> bool:
@@ -216,6 +240,8 @@ class PlaceFilter:
     power_outlets: bool | None = None
     atmosphere: Atmosphere | None = None
     min_rating: float | None = None
+    min_price: int | None = None  # price_range.min >= (PLN)
+    max_price: int | None = None  # price_range.max <= (PLN); open-ended "60+" never matches
     open_at: datetime | None = None  # local time of the places; None = don't filter by opening hours
 
 
@@ -233,6 +259,10 @@ def _match(f: PlaceFilter) -> dict[str, Any]:
         query["atmosphere"] = str(f.atmosphere)
     if f.min_rating is not None:
         query["rating.average"] = {"$gte": f.min_rating}
+    if f.min_price is not None:
+        query["price_range.min"] = {"$gte": f.min_price}
+    if f.max_price is not None:
+        query["price_range.max"] = {"$lte": f.max_price}  # null (open-ended / unknown) never matches
     if f.open_at is not None:
         hhmm = f.open_at.strftime("%H:%M")
         query["$and"] = [
@@ -306,6 +336,7 @@ def summary_from_document(doc: dict[str, Any], now: datetime) -> PlaceSummary:
     photos = doc.get("photos", [])
     first = photo_from_subdocument(photos[0]) if photos else None
     hours = doc.get("opening_hours")
+    status = OpeningHours.model_validate(hours).status_at(now) if hours else None
     return PlaceSummary(
         id=str(doc["_id"]),
         name=doc["name"],
@@ -313,11 +344,14 @@ def summary_from_document(doc: dict[str, Any], now: datetime) -> PlaceSummary:
         coordinates=Coordinates(lat=lat, lon=lon),
         amenities=doc.get("amenities", {}),
         usage_price=doc.get("usage_price"),
+        price_range=doc.get("price_range"),
         atmosphere=doc.get("atmosphere"),
         rating=doc.get("rating", {}),
         thumbnail_url=(first.thumbnail.url if first.thumbnail else first.url) if first else None,
         photo_count=len(photos),
-        open_now=OpeningHours.model_validate(hours).is_open_at(now) if hours else None,
+        open_now=status.open_now if status else None,
+        closes_at=status.closes_at if status else None,
+        opens_at=status.opens_at if status else None,
         is_mock=doc.get("is_mock", False),
         distance_m=doc.get("distance_m"),
     )
