@@ -126,7 +126,8 @@ Wydaje token dla dowolnej nazwy i roli – idealne do Postmana i testowania upra
    zapisuje go i czyści adres (`history.replaceState`).
 4. Każde zapytanie zapisujące: `Authorization: Bearer <access_token>`. Odpowiedź `401` = token
    wygasł → ponowne logowanie.
-5. Jeśli front będzie na innej domenie niż API, trzeba będzie dodać CORS (na razie nie ma).
+5. Front na innej domenie/porcie niż API: dopisz jego adres do `CORS_ORIGINS`. Całość integracji:
+   [`FRONTEND.md`](FRONTEND.md).
 
 ## Produkcja – checklista
 

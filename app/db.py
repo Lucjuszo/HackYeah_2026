@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 from pymongo import AsyncMongoClient
@@ -25,6 +26,11 @@ def utcnow() -> datetime:
     """Current UTC time truncated to milliseconds – BSON's precision – so values read back match values written."""
     now = datetime.now(UTC)
     return now.replace(microsecond=now.microsecond // 1000 * 1000)
+
+
+def local_now() -> datetime:
+    """Current time in TIMEZONE, the zone of places' opening hours."""
+    return datetime.now(ZoneInfo(settings.timezone))
 
 
 def parse_object_id(value: str) -> ObjectId | None:

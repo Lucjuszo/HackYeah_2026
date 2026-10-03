@@ -45,3 +45,13 @@ class DevLoginRequest(BaseModel):
         description="Stable username; the same name always maps to the same user"
     )
     role: Role = Role.USER
+
+
+class LoginProvider(BaseModel):
+    name: str
+    login_url: str = Field(description="Send the browser here (full page navigation, not fetch)")
+
+
+class AuthProviders(BaseModel):
+    providers: list[LoginProvider]
+    dev_login: bool = Field(description="POST /auth/dev-login is enabled")

@@ -25,6 +25,15 @@ class Settings(BaseSettings):
 
     mongo_db: str = "hackyeah"
 
+    # --- Frontend
+    # Comma-separated origins allowed to call the API from a browser (CORS). "*" allows any.
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    # Public address of this API, e.g. "https://api.example.com". Photo URLs become absolute
+    # (frontend on another origin can use them in <img src> as is). Unset: relative "/media/...".
+    public_base_url: str | None = None
+    # Places' opening hours are local time; "open now" is evaluated in this zone.
+    timezone: str = "Europe/Warsaw"
+
     # --- Photos (app/storage.py): local disk, served under media_base_url
     media_dir: str = "media"
     media_base_url: str = "/media"
@@ -32,6 +41,10 @@ class Settings(BaseSettings):
     max_photo_dimension: int = 1600  # longer side of the full version
     thumbnail_dimension: int = 400  # longer side of the thumbnail
     max_photos_per_place: int = 20
+
+    # --- Rate limits per user (in memory, per process; 0 = off)
+    photo_uploads_per_hour: int = 30
+    comments_per_hour: int = 60
 
     # --- Auth (see docs/AUTH.md)
     # Signs our own access tokens. Without it a random per-process secret is used,
@@ -56,6 +69,13 @@ class Settings(BaseSettings):
         if value is not None and len(value.get_secret_value()) < 32:
             raise ValueError("JWT_SECRET must be at least 32 characters")
         return value
+
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
+
+    def media_url_prefix(self) -> str:
+        base = self.public_base_url.rstrip("/") if self.public_base_url else ""
+        return base + "/" + self.media_base_url.strip("/")
 
     def admin_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}

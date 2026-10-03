@@ -9,7 +9,7 @@ from app.auth import CurrentUser
 from app.auth import oauth as oauth_flow
 from app.auth.tokens import create_access_token
 from app.config import settings
-from app.models.user import DevLoginRequest, TokenResponse, User
+from app.models.user import AuthProviders, DevLoginRequest, LoginProvider, TokenResponse, User
 from app.repositories import users as repo
 from app.routers.deps import Db
 
@@ -27,15 +27,15 @@ def _require_provider(provider: str) -> None:
 
 
 @router.get("/providers")
-async def list_providers(request: Request) -> dict:
+async def list_providers(request: Request) -> AuthProviders:
     """Configured login options; the frontend sends the browser to `login_url`."""
-    return {
-        "providers": [
-            {"name": name, "login_url": str(request.url_for("oauth_login", provider=name))}
+    return AuthProviders(
+        providers=[
+            LoginProvider(name=name, login_url=str(request.url_for("oauth_login", provider=name)))
             for name in oauth_flow.configured_providers()
         ],
-        "dev_login": settings.auth_dev_login,
-    }
+        dev_login=settings.auth_dev_login,
+    )
 
 
 @router.get("/{provider}/login", name="oauth_login")

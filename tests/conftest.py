@@ -31,6 +31,8 @@ from pymongo import MongoClient  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
 from app.repositories import comments, places, ratings, users  # noqa: E402
+from app.routers.comments import comment_limiter  # noqa: E402
+from app.routers.photos import upload_limiter  # noqa: E402
 
 from tests.helpers import DEFAULT_USER, EXAMPLES_DIR, MEDIA_DIR, as_user  # noqa: E402
 
@@ -63,6 +65,8 @@ def _clean_state(request):
     uses_db = "db" in request.fixturenames or "client" in request.fixturenames
     database = request.getfixturevalue("db") if uses_db else None
     yield
+    for limiter in (upload_limiter, comment_limiter):
+        limiter.reset()
     if database is not None:
         for collection in (places.COLLECTION, ratings.COLLECTION, comments.COLLECTION, users.COLLECTION):
             database[collection].delete_many({})  # keep indexes, drop data

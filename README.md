@@ -29,6 +29,10 @@ GitHub i Google przez OAuth; backend wystawia własny token (`Authorization: Bea
 Odczyt publiczny, zapis wymaga logowania; komentarze edytuje/usuwa autor albo admin.
 Konfiguracja i testowanie bez frontu: [`docs/AUTH.md`](docs/AUTH.md).
 
+### Integracja z frontem
+
+CORS, logowanie, wyszukiwanie, zdjęcia, paginacja, błędy: [`docs/FRONTEND.md`](docs/FRONTEND.md).
+
 ### Dane testowe
 
 ```bash

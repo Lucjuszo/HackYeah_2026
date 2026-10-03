@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from pymongo.errors import ServerSelectionTimeoutError
+from fastapi import FastAPI, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth.tokens import signing_secret
@@ -34,6 +36,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="HackYeah 2026", lifespan=lifespan)
+# The frontend sends the token in the Authorization header (no cookies), so no allow_credentials.
+# X-Total-Count must be exposed explicitly or browsers hide it from JavaScript.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list(),
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
+    max_age=600,
+)
 # Only used during OAuth login, to keep the anti-CSRF `state` between /login and /callback.
 # same_site="lax" lets the cookie ride along on the provider's top-level redirect back to us.
 app.add_middleware(SessionMiddleware, secret_key=signing_secret(), same_site="lax", max_age=600)
@@ -46,6 +58,10 @@ app.include_router(media.router)
 
 
 @app.get("/health")
-async def health():
-    await get_db().command("ping")
-    return {"status": "ok", "mongo": "ok"}
+async def health() -> JSONResponse:
+    """200 when the database answers, 503 otherwise (load balancers and uptime checks read the status)."""
+    try:
+        await get_db().command("ping")
+    except PyMongoError:
+        return JSONResponse({"status": "degraded", "mongo": "unreachable"}, status.HTTP_503_SERVICE_UNAVAILABLE)
+    return JSONResponse({"status": "ok", "mongo": "ok"})

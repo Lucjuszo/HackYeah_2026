@@ -1,13 +1,17 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from app.auth import CurrentUser
+from app.config import settings
 from app.models.comment import Comment, CommentCreate, CommentUpdate
+from app.ratelimit import RateLimiter
 from app.repositories import comments as repo
 from app.routers.deps import Db, ExistingPlaceId
 
 router = APIRouter(prefix="/places/{place_id}/comments", tags=["comments"])
+
+comment_limiter = RateLimiter("comments", lambda: settings.comments_per_hour)
 
 
 def _not_found() -> HTTPException:
@@ -20,6 +24,7 @@ def _forbidden() -> HTTPException:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_comment(place_id: ExistingPlaceId, body: CommentCreate, db: Db, user: CurrentUser) -> Comment:
+    comment_limiter.check(user.id)
     return await repo.create_comment(db, place_id, user.id, body.text, user_name=user.name)
 
 
@@ -27,9 +32,12 @@ async def create_comment(place_id: ExistingPlaceId, body: CommentCreate, db: Db,
 async def list_comments(
     place_id: ExistingPlaceId,
     db: Db,
+    response: Response,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     skip: Annotated[int, Query(ge=0)] = 0,
 ) -> list[Comment]:
+    """Total number of comments (for pagination) in the `X-Total-Count` header."""
+    response.headers["X-Total-Count"] = str(await repo.count_comments(db, place_id))
     return await repo.list_comments(db, place_id, limit=limit, skip=skip)
 
 

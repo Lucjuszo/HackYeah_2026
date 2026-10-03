@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "6f1d7c1e-8a52-4c1b-9b8e-4a6b2f0e9c31",
     "name": "HackYeah 2026 API",
-    "description": "Requests for the HackYeah 2026 backend. Run folders in order (0 → 4): later requests use ids and tokens saved by earlier ones. See postman/README.md.",
+    "description": "Requests for the HackYeah 2026 backend. Run folders in order (0 → 5): later requests use ids and tokens saved by earlier ones. See postman/README.md.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -161,6 +161,51 @@
             "type": "text/javascript",
             "exec": [
               "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "CORS preflight from frontend",
+      "request": {
+        "method": "OPTIONS",
+        "header": [
+          {
+            "key": "Origin",
+            "value": "http://localhost:5173"
+          },
+          {
+            "key": "Access-Control-Request-Method",
+            "value": "POST"
+          },
+          {
+            "key": "Access-Control-Request-Headers",
+            "value": "authorization,content-type"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/places",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "places"
+          ]
+        },
+        "description": "What the browser sends before a cross-origin POST. Origins: CORS_ORIGINS in .env.",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Origin allowed\", () => pm.expect(pm.response.headers.get(\"Access-Control-Allow-Origin\")).to.eql(\"http://localhost:5173\"));"
             ]
           }
         }
@@ -795,6 +840,270 @@
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
                   "pm.test(\"All have outlets\", () => body.forEach(p => pm.expect(p.amenities.power_outlets).to.be.true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Map / list cards – summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/summary?lat=50.0617&lon=19.9373&radius_m=2000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "50.0617"
+                },
+                {
+                  "key": "lon",
+                  "value": "19.9373"
+                },
+                {
+                  "key": "radius_m",
+                  "value": "2000"
+                }
+              ]
+            },
+            "description": "Light records for map pins and list cards. Same filters as GET /places, total in X-Total-Count.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"X-Total-Count header\", () => pm.expect(Number(pm.response.headers.get(\"X-Total-Count\"))).to.be.at.least(pm.response.json().length));",
+                  "pm.test(\"Contains the created place\", () => {",
+                  "  pm.expect(pm.response.json().map(p => p.id)).to.include(pm.collectionVariables.get(\"placeId\"));",
+                  "});",
+                  "pm.test(\"Light record\", () => {",
+                  "  const p = pm.response.json()[0];",
+                  "  pm.expect(p).to.include.keys(\"id\", \"name\", \"coordinates\", \"rating\", \"thumbnail_url\", \"open_now\", \"distance_m\");",
+                  "  pm.expect(p).to.not.have.property(\"menu\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – distance + total count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places?lat=50.0617&lon=19.9373&radius_m=1000&limit=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "50.0617"
+                },
+                {
+                  "key": "lon",
+                  "value": "19.9373"
+                },
+                {
+                  "key": "radius_m",
+                  "value": "1000"
+                },
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"X-Total-Count header\", () => pm.expect(Number(pm.response.headers.get(\"X-Total-Count\"))).to.be.at.least(pm.response.json().length));",
+                  "pm.test(\"distance_m present\", () => pm.response.json().forEach(p => pm.expect(p.distance_m).to.be.a(\"number\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – text q (name or street)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places?q=floria",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "floria"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Contains the created place\", () => {",
+                  "  pm.expect(pm.response.json().map(p => p.id)).to.include(pm.collectionVariables.get(\"placeId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – wifi + quiet + best rated",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places?wifi=true&atmosphere=quiet&sort=rating",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places"
+              ],
+              "query": [
+                {
+                  "key": "wifi",
+                  "value": "true"
+                },
+                {
+                  "key": "atmosphere",
+                  "value": "quiet"
+                },
+                {
+                  "key": "sort",
+                  "value": "rating"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"X-Total-Count header\", () => pm.expect(Number(pm.response.headers.get(\"X-Total-Count\"))).to.be.at.least(pm.response.json().length));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – open now",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/summary?open_now=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "open_now",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Evaluated in TIMEZONE (Europe/Warsaw). Places with unknown hours are left out.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"All open\", () => pm.response.json().forEach(p => pm.expect(p.open_now).to.eql(true)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search – sort=distance without lat/lon → 422",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places?sort=distance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places"
+              ],
+              "query": [
+                {
+                  "key": "sort",
+                  "value": "distance"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
                 ]
               }
             }
@@ -1839,8 +2148,8 @@
                   "  pm.expect(body.thumbnail.size).to.be.below(body.size);",
                   "});",
                   "pm.collectionVariables.set(\"photoId\", body.id);",
-                  "pm.collectionVariables.set(\"photoUrl\", body.url);",
-                  "pm.collectionVariables.set(\"thumbnailUrl\", body.thumbnail.url);",
+                  "pm.collectionVariables.set(\"photoUrl\", body.url.replace(/^https?:\\/\\/[^/]+/, \"\"));",
+                  "pm.collectionVariables.set(\"thumbnailUrl\", body.thumbnail.url.replace(/^https?:\\/\\/[^/]+/, \"\"));",
                   "pm.collectionVariables.set(\"photoSize\", body.size);",
                   "pm.collectionVariables.set(\"thumbnailSize\", body.thumbnail.size);"
                 ]
@@ -2284,6 +2593,151 @@
               "raw": "{{baseUrl}}{{thumbnailUrl}}",
               "host": [
                 "{{baseUrl}}{{thumbnailUrl}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Delete place (admin)",
+      "description": "Run last: deletes the place created in '1. Places' together with its ratings, comments and photos.",
+      "item": [
+        {
+          "name": "Delete place as user (bartek) → 403",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenOther}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete place as admin",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get deleted place → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Comments of deleted place → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/comments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "comments"
               ]
             },
             "auth": {

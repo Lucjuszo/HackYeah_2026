@@ -59,6 +59,10 @@ async def create_comment(
     return _from_document(doc)
 
 
+async def count_comments(db: AsyncDatabase, place_id: ObjectId) -> int:
+    return await db[COLLECTION].count_documents({"place_id": place_id})
+
+
 async def list_comments(db: AsyncDatabase, place_id: ObjectId, *, limit: int, skip: int) -> list[Comment]:
     # Newest first; _id breaks ties between comments created in the same millisecond.
     cursor = db[COLLECTION].find({"place_id": place_id}).sort([("created_at", -1), ("_id", -1)]).skip(skip).limit(limit)

@@ -11,11 +11,14 @@ from app.config import settings
 from app.db import utcnow
 from app.images import InvalidImage, process_photo
 from app.models.place import Photo
+from app.ratelimit import RateLimiter
 from app.repositories import places as repo
 from app.routers.deps import Db
 from app.storage import get_storage
 
 router = APIRouter(prefix="/places/{place_id}/photos", tags=["photos"])
+
+upload_limiter = RateLimiter("photo uploads", lambda: settings.photo_uploads_per_hour)
 
 
 class PhotoSize(StrEnum):
@@ -35,6 +38,7 @@ async def upload_photo(place_id: str, file: UploadFile, db: Db, user: CurrentUse
     # place_id ends up in storage paths, so reject anything that isn't an ObjectId up front.
     if not ObjectId.is_valid(place_id) or not await repo.place_exists(db, ObjectId(place_id)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Place not found")
+    upload_limiter.check(user.id)
     raw = await file.read(settings.max_photo_bytes + 1)
     if len(raw) > settings.max_photo_bytes:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"Max photo size is {settings.max_photo_bytes} bytes")
@@ -63,6 +67,7 @@ async def upload_photo(place_id: str, file: UploadFile, db: Db, user: CurrentUse
             "size": len(photo.thumbnail.data),
         },
         "uploaded_by": user.id,
+        "uploaded_by_name": user.name,
         "created_at": utcnow(),
     }
 

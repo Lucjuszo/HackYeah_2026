@@ -153,7 +153,16 @@ class Photo(BaseModel):
         None, description="Small version for lists and maps (longer side <= THUMBNAIL_DIMENSION)"
     )
     uploaded_by: str | None = None
+    uploaded_by_name: str | None = Field(None, description="Uploader's display name at the time of upload")
     created_at: datetime
+
+
+class PlaceSort(StrEnum):
+    DISTANCE = "distance"  # closest first; needs lat/lon
+    RATING = "rating"  # best average first, unrated last
+    NAME = "name"
+    NEWEST = "newest"
+    OLDEST = "oldest"
 
 
 class Place(PlaceCreate):
@@ -169,3 +178,22 @@ class Place(PlaceCreate):
     updated_by: str | None = None
     created_at: datetime
     updated_at: datetime
+    distance_m: float | None = Field(None, description="Distance from the searched point; only in searches by lat/lon")
+
+
+class PlaceSummary(BaseModel):
+    """Light version of Place for maps and lists: no menu, opening hours or photo list."""
+
+    id: str
+    name: str
+    address: Address
+    coordinates: Coordinates
+    amenities: Amenities
+    usage_price: str | None = None
+    atmosphere: Atmosphere | None = None
+    rating: RatingSummary
+    thumbnail_url: str | None = Field(None, description="Thumbnail of the first photo")
+    photo_count: int = 0
+    open_now: bool | None = Field(None, description="None = opening hours unknown")
+    is_mock: bool = False
+    distance_m: float | None = None

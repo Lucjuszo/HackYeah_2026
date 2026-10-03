@@ -1,4 +1,7 @@
+import re
 from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from bson import ObjectId
@@ -7,7 +10,19 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
 from app.db import parse_object_id, utcnow
-from app.models.place import Coordinates, MenuItem, Photo, PhotoVariant, Place, PlaceCreate, PlaceUpdate
+from app.models.opening_hours import OpeningHours
+from app.models.place import (
+    Atmosphere,
+    Coordinates,
+    MenuItem,
+    Photo,
+    PhotoVariant,
+    Place,
+    PlaceCreate,
+    PlaceSort,
+    PlaceSummary,
+    PlaceUpdate,
+)
 from app.storage import get_storage
 
 COLLECTION = "places"
@@ -107,6 +122,7 @@ def from_document(doc: dict[str, Any]) -> Place:
         updated_by=doc.get("updated_by"),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
+        distance_m=doc.get("distance_m"),
     )
 
 
@@ -130,6 +146,7 @@ def photo_from_subdocument(sub: dict[str, Any]) -> Photo:
         if thumbnail
         else None,
         uploaded_by=sub.get("uploaded_by"),
+        uploaded_by_name=sub.get("uploaded_by_name"),
         created_at=sub["created_at"],
     )
 
@@ -187,23 +204,139 @@ async def get_place(db: AsyncDatabase, place_id: str) -> Place | None:
     return from_document(doc) if doc else None
 
 
-async def list_places(
-    db: AsyncDatabase,
-    *,
-    near: Coordinates | None = None,
-    radius_m: int = 1000,
-    power_outlets: bool | None = None,
-    limit: int = 50,
-    skip: int = 0,
-) -> list[Place]:
+EARTH_RADIUS_M = 6_378_100  # what $centerSphere / $geoNear assume
+
+
+@dataclass
+class PlaceFilter:
+    near: Coordinates | None = None
+    radius_m: int = 1000
+    q: str | None = None
+    wifi: bool | None = None
+    power_outlets: bool | None = None
+    atmosphere: Atmosphere | None = None
+    min_rating: float | None = None
+    open_at: datetime | None = None  # local time of the places; None = don't filter by opening hours
+
+
+def _match(f: PlaceFilter) -> dict[str, Any]:
+    """Everything except the distance condition (that one differs between $geoNear and count)."""
     query: dict[str, Any] = {}
-    if near:
-        # $near sorts results by distance, closest first.
-        query["location"] = {"$near": {"$geometry": _geo_point(near), "$maxDistance": radius_m}}
-    if power_outlets is not None:
-        query["amenities.power_outlets"] = power_outlets
-    cursor = db[COLLECTION].find(query).skip(skip).limit(limit)
-    return [from_document(doc) async for doc in cursor]
+    if f.q:
+        pattern = {"$regex": re.escape(f.q.strip()), "$options": "i"}
+        query["$or"] = [{"name": pattern}, {"address.street": pattern}]
+    if f.wifi is not None:
+        query["amenities.wifi"] = f.wifi
+    if f.power_outlets is not None:
+        query["amenities.power_outlets"] = f.power_outlets
+    if f.atmosphere is not None:
+        query["atmosphere"] = str(f.atmosphere)
+    if f.min_rating is not None:
+        query["rating.average"] = {"$gte": f.min_rating}
+    if f.open_at is not None:
+        hhmm = f.open_at.strftime("%H:%M")
+        query["$and"] = [
+            {
+                "$or": [
+                    {"opening_hours.always_open": True},
+                    {
+                        "opening_hours.periods": {
+                            "$elemMatch": {"day": f.open_at.weekday(), "open": {"$lte": hhmm}, "close": {"$gt": hhmm}}
+                        }
+                    },
+                ]
+            }
+        ]
+    return query
+
+
+_SORTS: dict[PlaceSort, dict[str, int]] = {
+    PlaceSort.RATING: {"rating.average": -1, "rating.count": -1, "_id": 1},
+    PlaceSort.NAME: {"name": 1, "_id": 1},
+    PlaceSort.NEWEST: {"_id": -1},
+    PlaceSort.OLDEST: {"_id": 1},
+}
+
+
+async def search_places(
+    db: AsyncDatabase, f: PlaceFilter, *, sort: PlaceSort | None = None, limit: int = 50, skip: int = 0
+) -> tuple[list[dict[str, Any]], int]:
+    """Raw documents of one page (with `distance_m` when searching near a point) and the total match count.
+
+    Default order: by distance when `near` is given, oldest first otherwise.
+    """
+    match = _match(f)
+    if f.near:
+        sort = sort or PlaceSort.DISTANCE
+        pipeline: list[dict[str, Any]] = [
+            {
+                "$geoNear": {
+                    "near": _geo_point(f.near),
+                    "distanceField": "distance_m",
+                    "maxDistance": f.radius_m,
+                    "query": match,
+                    "spherical": True,
+                }
+            }
+        ]
+        count_query = {
+            **match,
+            "location": {
+                "$geoWithin": {"$centerSphere": [[f.near.lon, f.near.lat], f.radius_m / EARTH_RADIUS_M]}
+            },
+        }
+    else:
+        if sort == PlaceSort.DISTANCE:
+            raise ValueError("sort=distance needs lat and lon")
+        sort = sort or PlaceSort.OLDEST
+        pipeline = [{"$match": match}]
+        count_query = match
+    if sort != PlaceSort.DISTANCE:  # $geoNear already returns closest first
+        pipeline.append({"$sort": _SORTS[sort]})
+    pipeline += [{"$skip": skip}, {"$limit": limit}]
+
+    cursor = await db[COLLECTION].aggregate(pipeline)
+    docs = await cursor.to_list()
+    total = await db[COLLECTION].count_documents(count_query)
+    return docs, total
+
+
+def summary_from_document(doc: dict[str, Any], now: datetime) -> PlaceSummary:
+    lon, lat = doc["location"]["coordinates"]
+    photos = doc.get("photos", [])
+    first = photo_from_subdocument(photos[0]) if photos else None
+    hours = doc.get("opening_hours")
+    return PlaceSummary(
+        id=str(doc["_id"]),
+        name=doc["name"],
+        address=doc["address"],
+        coordinates=Coordinates(lat=lat, lon=lon),
+        amenities=doc.get("amenities", {}),
+        usage_price=doc.get("usage_price"),
+        atmosphere=doc.get("atmosphere"),
+        rating=doc.get("rating", {}),
+        thumbnail_url=(first.thumbnail.url if first.thumbnail else first.url) if first else None,
+        photo_count=len(photos),
+        open_now=OpeningHours.model_validate(hours).is_open_at(now) if hours else None,
+        is_mock=doc.get("is_mock", False),
+        distance_m=doc.get("distance_m"),
+    )
+
+
+async def delete_place(db: AsyncDatabase, place_id: str) -> list[str] | None:
+    """Deletes the place with its ratings and comments; returns the storage keys of its photos, None if not found."""
+    oid = parse_object_id(place_id)
+    if oid is None:
+        return None
+    doc = await db[COLLECTION].find_one_and_delete({"_id": oid}, projection={"photos": 1})
+    if doc is None:
+        return None
+    # Imported here: both modules import this one.
+    from app.repositories import comments, ratings
+
+    await db[ratings.COLLECTION].delete_many({"place_id": oid})
+    await db[comments.COLLECTION].delete_many({"place_id": oid})
+    return [key for photo in doc.get("photos", []) for key in photo_storage_keys(photo)]
 
 
 class PhotoLimitReached(Exception):

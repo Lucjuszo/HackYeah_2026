@@ -16,9 +16,8 @@ class Storage(Protocol):
 class LocalStorage:
     """Files on disk, served under media_base_url. Fine for dev and a single small VPS."""
 
-    def __init__(self, root: str, base_url: str) -> None:
+    def __init__(self, root: str) -> None:
         self.root = Path(root)
-        self.base_url = base_url.rstrip("/")
 
     def path(self, key: str) -> Path | None:
         """Path of the stored file, None if it doesn't exist or the key escapes the media dir ("../")."""
@@ -37,9 +36,10 @@ class LocalStorage:
         await asyncio.to_thread((self.root / key).unlink, missing_ok=True)
 
     def url(self, key: str) -> str:
-        return f"{self.base_url}/{key}"
+        # Absolute when PUBLIC_BASE_URL is set; read per call so a config change needs no new storage.
+        return f"{settings.media_url_prefix()}/{key}"
 
 
 @cache
 def get_storage() -> Storage:
-    return LocalStorage(settings.media_dir, settings.media_base_url)
+    return LocalStorage(settings.media_dir)

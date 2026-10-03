@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import IntEnum
 from typing import Annotated, Self
 
@@ -49,3 +50,10 @@ class OpeningHours(BaseModel):
             raise ValueError("always_open places must not define periods")
         self.periods.sort(key=lambda p: (p.day, p.open))
         return self
+
+    def is_open_at(self, local: datetime) -> bool:
+        """`local` in the place's time zone."""
+        if self.always_open:
+            return True
+        hhmm = local.strftime("%H:%M")
+        return any(p.day == local.weekday() and p.open <= hhmm < p.close for p in self.periods)

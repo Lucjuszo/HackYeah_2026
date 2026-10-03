@@ -1,14 +1,16 @@
 # Kolekcja Postmana
 
-`HackYeah.postman_collection.json` – 53 zapytania z testami, ułożone w scenariusz:
+`HackYeah.postman_collection.json` – 64 zapytania z testami, ułożone w scenariusz:
 
 | Folder | Co robi |
 |---|---|
 | `0. Auth` | jawne logowanie (opcjonalne – patrz niżej), `me`, błędne tokeny, podgląd przekierowania OAuth |
-| `1. Places` | dodanie, odczyt, wyszukiwanie, edycje częściowe (merge `amenities`, czyszczenie `null`, link do OSM, edycja przez innego użytkownika), błędy 401/404/422 |
+| `CORS preflight` | to, co przeglądarka wysyła przed zapytaniem z frontu (`Origin: http://localhost:5173`) |
+| `1. Places` | dodanie, odczyt, `/places/summary` (mapa), wyszukiwanie (dystans, `q`, `wifi`, `atmosphere`, `open_now`, `sort`, `X-Total-Count`), edycje częściowe (merge `amenities`, czyszczenie `null`, link do OSM, edycja przez innego użytkownika), błędy 401/404/422 |
 | `2. Ratings` | `anna` 5 → `bartek` 3 → `anna` zmienia na 4 → usuwa; testy sprawdzają średnią na każdym kroku |
 | `3. Comments` | autor edytuje, inny użytkownik dostaje 403, admin edytuje i usuwa |
 | `4. Photos` | upload (wersja pełna ≤1600 px + miniatura ≤400 px, WebP), lista, metadane, pobranie pliku (`/file?size=full\|thumbnail&download=true` i adres `/media/...`), 401/403/404, usunięcie własnego |
+| `5. Delete place (admin)` | na koniec: 403 dla zwykłego usera, admin usuwa miejsce razem z ocenami, komentarzami i zdjęciami |
 
 ## Start
 
@@ -49,6 +51,6 @@ zrobione w aplikacji (własne zapytania dopisuj w osobnej kolekcji albo przenie�
 
 ```bash
 npx newman run postman/HackYeah.postman_collection.json --env-var baseUrl=http://localhost:8000 \
-  --folder "1. Places" --folder "2. Ratings" --folder "3. Comments" --folder "4. Photos"
+  --folder "1. Places" --folder "2. Ratings" --folder "3. Comments" --folder "4. Photos" --folder "5. Delete place (admin)"
 ```
 (uruchamiaj z katalogu repo – upload zdjęcia bierze `postman/sample-photo.jpg` ze ścieżki względnej)
