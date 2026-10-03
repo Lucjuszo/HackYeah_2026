@@ -118,7 +118,31 @@ class PlacesApi {
     return (jsonDecode(utf8.decode(response.bodyBytes)), response);
   }
 
+  /// Logged-in request (POST/PUT/PATCH/DELETE or GET); 401 = token rejected (expired, logged out).
+  Future<Object?> _send(String method, String path, {required String token, Object? body}) async {
+    final request = http.Request(method, apiUrl.resolve(path))
+      ..headers['Authorization'] = 'Bearer $token';
+    if (body != null) {
+      request
+        ..headers['Content-Type'] = 'application/json'
+        ..body = jsonEncode(body);
+    }
+    final http.Response response;
+    try {
+      response = await http.Response.fromStream(await _client.send(request).timeout(timeout));
+    } on Exception {
+      throw const ApiException('Brak połączenia z serwerem. Sprawdź, czy backend działa.');
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_errorMessage(response), statusCode: response.statusCode);
+    }
+    return response.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(response.bodyBytes));
+  }
+
   static String _errorMessage(http.Response response) {
+    if (response.statusCode == 401) return 'Sesja wygasła. Zaloguj się ponownie.';
+    if (response.statusCode == 429) return 'Za dużo zmian w krótkim czasie. Spróbuj za chwilę.';
+    if (response.statusCode == 403) return 'Nie masz uprawnień do tej zmiany.';
     if (response.statusCode == 404) return 'Nie znaleziono.';
     if (response.statusCode >= 500) {
       return 'Serwer ma chwilowy problem. Spróbuj za moment.';
@@ -168,6 +192,86 @@ class PlacesApi {
       for (final json in body! as List) Comment.fromJson(json as Json),
     ];
     return Page(items, _total(response, items.length));
+  }
+
+  /// Where the browser goes to log in (GET /auth/{provider}/login).
+  Uri loginUrl(String provider) => apiUrl.resolve('auth/${Uri.encodeComponent(provider)}/login');
+
+  /// Configured login providers, e.g. ['github', 'google'].
+  Future<List<String>> loginProviders() async {
+    final (body, _) = await _get('auth/providers');
+    return [
+      for (final provider in ((body! as Json)['providers'] as List? ?? const []))
+        (provider as Json)['name'] as String,
+    ];
+  }
+
+  Future<CurrentUser> me({required String token}) async {
+    final body = await _send('GET', 'auth/me', token: token);
+    return CurrentUser.fromJson(body! as Json);
+  }
+
+  String _placePath(String placeId) => 'places/${Uri.encodeComponent(placeId)}';
+
+  /// The user's score 1–5, null if not rated yet.
+  Future<int?> myRating(String placeId, {required String token}) async {
+    try {
+      final body = await _send('GET', '${_placePath(placeId)}/ratings/me', token: token);
+      return (body! as Json)['score'] as int;
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Creates or changes the user's rating; returns the place's new summary.
+  Future<RatingSummary> rate(String placeId, int score, {required String token}) async {
+    final body = await _send('PUT', '${_placePath(placeId)}/ratings/me', token: token, body: {'score': score});
+    return RatingSummary.fromJson((body! as Json)['summary'] as Json);
+  }
+
+  Future<RatingSummary> deleteRating(String placeId, {required String token}) async {
+    final body = await _send('DELETE', '${_placePath(placeId)}/ratings/me', token: token);
+    return RatingSummary.fromJson(body! as Json);
+  }
+
+  Future<Comment> addComment(String placeId, String text, {required String token}) async {
+    final body = await _send('POST', '${_placePath(placeId)}/comments', token: token, body: {'text': text});
+    return Comment.fromJson(body! as Json);
+  }
+
+  Future<Comment> editComment(String placeId, String commentId, String text, {required String token}) async {
+    final body = await _send(
+      'PATCH',
+      '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}',
+      token: token,
+      body: {'text': text},
+    );
+    return Comment.fromJson(body! as Json);
+  }
+
+  Future<void> deleteComment(String placeId, String commentId, {required String token}) async {
+    await _send('DELETE', '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}', token: token);
+  }
+
+  /// Address of a point; null where there is none (sea, forest).
+  Future<ReverseGeocodeResult?> reverseGeocode(LatLon point) async {
+    try {
+      final (body, _) = await _get('geocode/reverse', {
+        'lat': point.lat.toStringAsFixed(6),
+        'lon': point.lon.toStringAsFixed(6),
+      });
+      return ReverseGeocodeResult.fromJson(body! as Json);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// POST /places (logged in). Returns the created place.
+  Future<Place> createPlace(NewPlace place, {required String token}) async {
+    final body = await _send('POST', 'places', token: token, body: place.toJson());
+    return Place.fromJson(body! as Json, apiUrl: apiUrl);
   }
 
   Future<List<GeocodeResult>> geocode(String text) async {

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Logowanie…</title>
+</head>
+<body style="font-family: sans-serif; padding: 32px">
+  <p id="message">Logowanie…</p>
+  <script>
+    // The backend redirects here after Google login: #access_token=...&expires_in=... or #error=...
+    // Hands the result to the app window (lib/auth/oauth_launcher_web.dart) and closes the popup.
+    (function () {
+      var params = new URLSearchParams(location.hash.slice(1));
+      var result = {
+        type: 'miejscowki-auth',
+        access_token: params.get('access_token'),
+        expires_in: params.get('expires_in'),
+        error: params.get('error')
+      };
+      // Don't leave the token in the address bar / history.
+      history.replaceState(null, '', location.pathname);
+      // Google's pages can cut window.opener (COOP), so also via localStorage -> "storage" event.
+      try { localStorage.setItem('miejscowki-auth-result', JSON.stringify(result)); } catch (e) {}
+      if (window.opener) {
+        try { window.opener.postMessage(result, location.origin); } catch (e) {}
+      }
+      document.getElementById('message').textContent = result.access_token
+        ? 'Zalogowano. Możesz zamknąć to okno.'
+        : 'Logowanie nie powiodło się. Zamknij to okno i spróbuj ponownie.';
+      setTimeout(function () { window.close(); }, 300);
+    })();
+  </script>
+</body>
+</html>

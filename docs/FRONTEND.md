@@ -20,22 +20,39 @@ Front: Flutter (`frontend/`). Kontrakt API: `http://localhost:8000/docs` (Swagge
 | `AUTH_REDIRECT_URL` | `http://localhost:5173/auth/callback` | strona frontu, na którą wraca logowanie OAuth |
 | `AUTH_DEV_LOGIN` | `true` | lokalnie: logowanie bez OAuth (`POST /auth/dev-login`) |
 
-## Logowanie
+## Logowanie (GitHub / Google)
 
-1. `GET /auth/providers` → `{providers: [{name, login_url}], dev_login}`.
-2. Przycisk „Zaloguj przez GitHub” = **nawigacja całej strony** na `login_url` (nie `fetch`).
-3. Backend wraca na `AUTH_REDIRECT_URL#access_token=...&expires_in=86400`. Front czyta `location.hash`,
-   zapisuje token, czyści adres (`history.replaceState`).
-4. Każde zapytanie zapisujące: nagłówek `Authorization: Bearer <token>`. Bez cookies (`credentials` niepotrzebne).
-5. `GET /auth/me` → profil (imię, avatar, rola `user`/`admin`).
-6. **`401` = token wygasł lub jest zły** (żyje 24 h, odświeżania nie ma): usuń token i pokaż logowanie.
+Front loguje dopiero, gdy jest potrzebne (dodanie miejsca, ocena, opinia): arkusz „Zaloguj się” z przyciskami
+dostawców z `GET /auth/providers` (użytkownik wybiera GitHub albo Google). Token trzyma między uruchomieniami
+(`shared_preferences`), a `GET /auth/me` mówi, kto jest zalogowany (własne opinie można edytować i usuwać). Cały OAuth robi backend, front tylko otwiera stronę logowania i odbiera token:
 
-Lokalnie bez OAuth: `POST /auth/dev-login` z `{"name": "anna", "role": "user"}` → ten sam `access_token`.
-**Na start integracji polecane** – działa identycznie w Chrome i w aplikacji Windows.
+- **Flutter web:** wyskakujące okno na `GET /auth/{github|google}/login?return_to=<origin frontu>/auth_callback.html`.
+  Backend po zalogowaniu odsyła okno na `return_to#access_token=...&expires_in=...` (albo `#error=access_denied`),
+  a `web/auth_callback.html` przekazuje token do aplikacji (postMessage + localStorage) i zamyka okno.
+  Okno musi otworzyć się bezpośrednio po kliknięciu, inaczej przeglądarka je zablokuje.
+- **Windows:** systemowa przeglądarka; `return_to=http://127.0.0.1:<losowy port>/callback` to jednorazowa strona
+  serwowana przez aplikację.
 
-Kroki 2–3 (przekierowania) działają we Flutter web. W aplikacji Windows nie ma paska adresu, do którego
-backend mógłby wrócić – tam OAuth wymaga osobnego rozwiązania (np. `AUTH_REDIRECT_URL=http://localhost:<port>/`
-nasłuchiwany przez aplikację); do ustalenia, jeśli wersja desktopowa będzie potrzebna.
+`return_to` musi mieć origin z `CORS_ORIGINS`, z `AUTH_REDIRECT_URL` albo – przy `CORS_ALLOW_LOCALHOST=true` –
+`localhost`/`127.0.0.1` na dowolnym porcie; inaczej `400`. Bez `return_to` backend wraca na `AUTH_REDIRECT_URL`,
+a bez obu odpowiada JSON-em (testy bez frontu).
+
+Każde zapytanie zapisujące: `Authorization: Bearer <token>`. **`401` = token wygasł** (24 h): front zapomina
+token, następna akcja loguje od nowa. Lokalnie bez Google: `POST /auth/dev-login` (`AUTH_DEV_LOGIN=true`).
+
+Konfiguracja klienta Google (Cloud Console, redirect URI `http://localhost:8000/auth/google/callback`):
+[`AUTH.md`](AUTH.md), sekcja *Google*.
+
+## Dodawanie miejsca, ocen i opinii
+
+- **Miejsce** (przycisk + na liście → formularz): nazwa, pinezka na mapie (adres z `GET /geocode/reverse`,
+  `404` = brak adresu), wyszukiwanie adresu (`GET /geocode`), udogodnienia, atmosfera, cena (`usage_price`:
+  `za darmo`, `0-30`, `30-60`, `60+`) i godziny otwarcia (nie wiem / całą dobę / Pon–Pt + Sob–Nd; zamknięcie po
+  północy dzielone na 24:00). Potem `POST /places` i od razu szczegóły nowego miejsca.
+- **Ocena** (szczegóły → „Oceń to miejsce”): `GET/PUT/DELETE /places/{id}/ratings/me`; PUT zwraca nowe
+  podsumowanie (`summary`), które front od razu pokazuje.
+- **Opinie**: `POST /places/{id}/comments` (pole „Napisz opinię…”), `PATCH` / `DELETE .../comments/{id}` z menu
+  ⋮ przy własnych opiniach (admin: przy wszystkich).
 
 ## Miejsca
 

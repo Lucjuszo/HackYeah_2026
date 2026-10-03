@@ -172,6 +172,22 @@ class PlaceSummary {
         distanceM: _double(json['distance_m']),
       );
 
+  /// A just-created place shown before the next search returns it.
+  factory PlaceSummary.fromPlace(Place place) => PlaceSummary(
+    id: place.id,
+    name: place.name,
+    address: place.address,
+    location: place.location,
+    amenities: place.amenities,
+    rating: place.rating,
+    usagePrice: place.usagePrice,
+    priceRange: place.priceRange,
+    atmosphere: place.atmosphere,
+    thumbnailUrl: place.photos.isEmpty ? null : place.photos.first.thumbnailUrl,
+    photoCount: place.photos.length,
+    isMock: place.isMock,
+  );
+
   final String id;
   final String name;
   final Address address;
@@ -368,6 +384,7 @@ class Comment {
     required this.id,
     required this.text,
     required this.createdAt,
+    this.userId,
     this.userName,
     this.editedAt,
   });
@@ -375,6 +392,7 @@ class Comment {
   factory Comment.fromJson(Json json) => Comment(
     id: json['id'] as String,
     text: json['text'] as String,
+    userId: json['user_id'] as String?,
     userName: json['user_name'] as String?,
     createdAt: _date(json['created_at'])!,
     editedAt: _date(json['edited_at']),
@@ -382,9 +400,28 @@ class Comment {
 
   final String id;
   final String text;
+  final String? userId;
   final String? userName;
   final DateTime createdAt;
   final DateTime? editedAt;
+}
+
+/// The logged-in user (GET /auth/me).
+class CurrentUser {
+  const CurrentUser({required this.id, required this.name, this.isAdmin = false});
+
+  factory CurrentUser.fromJson(Json json) => CurrentUser(
+    id: json['id'] as String,
+    name: json['name'] as String,
+    isAdmin: json['role'] == 'admin',
+  );
+
+  final String id;
+  final String name;
+  final bool isAdmin;
+
+  /// Authors edit and delete their own comments, admins any.
+  bool canModify(Comment comment) => isAdmin || comment.userId == id;
 }
 
 /// A city / address from GET /geocode.
@@ -435,6 +472,89 @@ class GeoBounds {
   final double west;
   final double north;
   final double east;
+}
+
+/// Address of a point from GET /geocode/reverse.
+class ReverseGeocodeResult {
+  const ReverseGeocodeResult({
+    required this.displayName,
+    this.street,
+    this.houseNumber,
+    this.postcode,
+    this.city,
+    this.countryCode,
+  });
+
+  factory ReverseGeocodeResult.fromJson(Json json) => ReverseGeocodeResult(
+    displayName: json['display_name'] as String? ?? '',
+    street: json['street'] as String?,
+    houseNumber: json['house_number'] as String?,
+    postcode: json['postcode'] as String?,
+    city: json['city'] as String?,
+    countryCode: json['country_code'] as String?,
+  );
+
+  final String displayName;
+  final String? street;
+  final String? houseNumber;
+  final String? postcode;
+  final String? city;
+  final String? countryCode;
+}
+
+/// Body of POST /places, from the "Dodaj miejscówkę" form.
+class NewPlace {
+  const NewPlace({
+    required this.name,
+    required this.location,
+    required this.city,
+    required this.countryCode,
+    this.street,
+    this.houseNumber,
+    this.postcode,
+    this.amenities = const <String, bool>{},
+    this.atmosphere,
+    this.usagePrice,
+    this.openingHours,
+  });
+
+  final String name;
+  final LatLon location;
+  final String city;
+  final String countryCode;
+  final String? street;
+  final String? houseNumber;
+  final String? postcode;
+
+  /// API flag name (e.g. 'wifi', 'power_outlets') -> available. Missing = unknown.
+  final Map<String, bool> amenities;
+  final Atmosphere? atmosphere;
+
+  /// e.g. '0-30', '60+', 'za darmo'.
+  final String? usagePrice;
+  final OpeningHours? openingHours;
+
+  Json toJson() => {
+    'name': name,
+    'address': {
+      'city': city,
+      'country_code': countryCode,
+      'street': ?street,
+      'house_number': ?houseNumber,
+      'postcode': ?postcode,
+    },
+    'coordinates': {'lat': location.lat, 'lon': location.lon},
+    if (amenities.isNotEmpty) 'amenities': amenities,
+    if (atmosphere case final a?) 'atmosphere': a.apiValue,
+    'usage_price': ?usagePrice,
+    if (openingHours case final h?)
+      'opening_hours': {
+        'always_open': h.alwaysOpen,
+        'periods': [
+          for (final p in h.periods) {'day': p.day, 'open': p.open, 'close': p.close},
+        ],
+      },
+  };
 }
 
 /// Photo URLs are relative ("/media/...") unless the backend has PUBLIC_BASE_URL set.

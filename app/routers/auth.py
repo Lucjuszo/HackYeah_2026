@@ -1,7 +1,9 @@
-from urllib.parse import urlencode
+import re
+from typing import Annotated
+from urllib.parse import urlencode, urlparse
 
 from authlib.integrations.base_client.errors import OAuthError
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from httpx import HTTPError
 
@@ -38,10 +40,49 @@ async def list_providers(request: Request) -> AuthProviders:
     )
 
 
+RETURN_KEY = "auth_return_to"
+
+
+def _is_allowed_return_url(url: str) -> bool:
+    """Only frontends we trust may receive tokens: CORS origins, AUTH_REDIRECT_URL's origin and,
+    with CORS_ALLOW_LOCALHOST, localhost on any port (Flutter web / the desktop app's loopback page)."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password:
+        return False
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    allowed = set(settings.cors_origin_list())
+    if settings.auth_redirect_url:
+        configured = urlparse(settings.auth_redirect_url)
+        allowed.add(f"{configured.scheme}://{configured.netloc}")
+    regex = settings.cors_origin_regex()
+    return origin in allowed or bool(regex and re.fullmatch(regex, origin))
+
+
+def _redirect_with(url: str, **params: str | int) -> RedirectResponse:
+    # Fragment, not query: it never reaches servers or logs on the way to the frontend.
+    return RedirectResponse(f"{url.split('#', 1)[0]}#{urlencode(params)}", status.HTTP_302_FOUND)
+
+
 @router.get("/{provider}/login", name="oauth_login")
-async def oauth_login(provider: str, request: Request):
+async def oauth_login(
+    provider: str,
+    request: Request,
+    return_to: Annotated[
+        str | None,
+        Query(
+            description="Frontend page to send the token to (#access_token=...); overrides AUTH_REDIRECT_URL. "
+            "Must be an allowed frontend origin (CORS_ORIGINS / localhost)."
+        ),
+    ] = None,
+):
     """Redirects the browser to the provider's consent screen."""
     _require_provider(provider)
+    if return_to is not None and not _is_allowed_return_url(return_to):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "return_to is not an allowed frontend address")
+    if return_to is not None:
+        request.session[RETURN_KEY] = return_to
+    else:
+        request.session.pop(RETURN_KEY, None)
     redirect_uri = str(request.url_for("oauth_callback", provider=provider))
     return await oauth_flow.authorize_redirect(provider, request, redirect_uri)
 
@@ -50,23 +91,27 @@ async def oauth_login(provider: str, request: Request):
 async def oauth_callback(provider: str, request: Request, db: Db):
     """The provider sends the browser back here; we log the user in and issue our access token.
 
-    With AUTH_REDIRECT_URL set, redirects to the frontend with `#access_token=...&expires_in=...`;
-    otherwise answers with the token as JSON (for testing without a frontend).
+    Redirects to the frontend with `#access_token=...&expires_in=...` (or `#error=...`): to the
+    `return_to` given at /login, else AUTH_REDIRECT_URL. Without either it answers with JSON
+    (for testing without a frontend).
     """
     _require_provider(provider)
-    if error := request.query_params.get("error"):
+    target = request.session.pop(RETURN_KEY, None) or settings.auth_redirect_url
+    if error := request.query_params.get("error"):  # e.g. the user clicked "Cancel"
+        if target:
+            return _redirect_with(target, error=error)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Login was not completed: {error}")
     try:
         identity = await oauth_flow.fetch_identity(provider, request)
     except (OAuthError, HTTPError) as e:
+        if target:
+            return _redirect_with(target, error="login_failed")
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Login with {provider} failed: {e}")
 
     user = await repo.login(db, identity, admin_emails=settings.admin_email_set())
     response = _token_response(user)
-    if settings.auth_redirect_url:
-        # Fragment, not query: it never reaches servers or logs on the way to the frontend.
-        fragment = urlencode({"access_token": response.access_token, "expires_in": response.expires_in})
-        return RedirectResponse(f"{settings.auth_redirect_url}#{fragment}", status.HTTP_302_FOUND)
+    if target:
+        return _redirect_with(target, access_token=response.access_token, expires_in=response.expires_in)
     return response
 
 
