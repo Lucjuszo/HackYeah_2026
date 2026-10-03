@@ -1,5 +1,4 @@
 import uuid
-from datetime import UTC, datetime
 from typing import Annotated
 
 from bson import ObjectId
@@ -8,7 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from pymongo.asynchronous.database import AsyncDatabase
 
 from app.config import settings
-from app.db import get_db
+from app.db import get_db, utcnow
 from app.images import InvalidImage, process_image
 from app.models.place import Photo
 from app.repositories import places as repo
@@ -41,7 +40,7 @@ async def upload_photo(place_id: str, file: UploadFile, db: Db) -> Photo:
         "width": image.width,
         "height": image.height,
         "size": len(image.data),
-        "created_at": datetime.now(UTC),
+        "created_at": utcnow(),
     }
 
     # File first, then DB entry: a failed DB write never leaves a reference to a missing file.

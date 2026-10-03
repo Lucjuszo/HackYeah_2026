@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from typing import Any
 
 from bson import ObjectId
@@ -6,6 +5,7 @@ from bson.errors import InvalidId
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
+from app.db import utcnow
 from app.models.place import Coordinates, Photo, Place, PlaceCreate
 from app.storage import get_storage
 
@@ -17,7 +17,7 @@ class PlaceAlreadyExists(Exception):
 
 
 def to_document(place: PlaceCreate) -> dict[str, Any]:
-    now = datetime.now(UTC)
+    now = utcnow()
     doc: dict[str, Any] = {
         # mode="json" turns enums into plain str/int, which is what BSON stores.
         **place.model_dump(
@@ -136,7 +136,7 @@ async def add_photo(db: AsyncDatabase, place_id: str, photo: dict[str, Any], max
         return None
     result = await db[COLLECTION].update_one(
         {"_id": oid, f"photos.{max_photos - 1}": {"$exists": False}},
-        {"$push": {"photos": photo}, "$set": {"updated_at": datetime.now(UTC)}},
+        {"$push": {"photos": photo}, "$set": {"updated_at": utcnow()}},
     )
     if result.matched_count == 0:
         if await db[COLLECTION].count_documents({"_id": oid}, limit=1):
@@ -153,7 +153,7 @@ async def remove_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> str |
         return None
     doc = await db[COLLECTION].find_one_and_update(
         {"_id": oid, "photos.id": photo_id},
-        {"$pull": {"photos": {"id": photo_id}}, "$set": {"updated_at": datetime.now(UTC)}},
+        {"$pull": {"photos": {"id": photo_id}}, "$set": {"updated_at": utcnow()}},
         projection={"photos": {"$elemMatch": {"id": photo_id}}},
     )
     return doc["photos"][0]["key"] if doc else None

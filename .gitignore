@@ -4,3 +4,5 @@ __pycache__/
 .env
 .idea/
 media/
+.coverage
+.pytest_cache/
