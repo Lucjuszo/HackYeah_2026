@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 
 from bson import ObjectId
@@ -28,7 +29,9 @@ def _menu(menu: list[MenuItem]) -> list[dict[str, Any]]:
     return [item.model_dump(exclude_none=True) for item in menu]
 
 
-def to_document(place: PlaceCreate, user_id: str, *, is_mock: bool = False) -> dict[str, Any]:
+def to_document(
+    place: PlaceCreate, user_id: str, *, is_mock: bool = False, mock_fields: Sequence[str] = ()
+) -> dict[str, Any]:
     now = utcnow()
     doc: dict[str, Any] = {
         **place.model_dump(mode="json", include=_PLAIN_FIELDS),
@@ -38,6 +41,7 @@ def to_document(place: PlaceCreate, user_id: str, *, is_mock: bool = False) -> d
         "photos": [],
         "rating": {"average": None, "count": 0},
         "is_mock": is_mock,
+        "mock_fields": list(mock_fields),
         "created_by": user_id,
         "updated_by": user_id,
         "created_at": now,
@@ -53,6 +57,8 @@ def to_update_operations(update: PlaceUpdate, user_id: str) -> dict[str, Any]:
     fields = update.model_fields_set
     to_set: dict[str, Any] = {"updated_at": utcnow(), "updated_by": user_id}
     to_unset: dict[str, Any] = {}
+    # Fields set by an edit hold real data now, so they stop being listed as mock.
+    edited = [f for f in fields if f != "amenities"]
 
     for field, value in update.model_dump(mode="json", include=fields & (_PLAIN_FIELDS - {"amenities"})).items():
         to_set[field] = value
@@ -60,6 +66,7 @@ def to_update_operations(update: PlaceUpdate, user_id: str) -> dict[str, Any]:
         # Merge flag by flag instead of replacing the whole object.
         for flag, value in update.amenities.model_dump(exclude_unset=True).items():
             to_set[f"amenities.{flag}"] = value
+            edited.append(f"amenities.{flag}")
     if "address" in fields:
         to_set["address"] = update.address.model_dump(exclude_none=True)
     if "coordinates" in fields:
@@ -72,7 +79,7 @@ def to_update_operations(update: PlaceUpdate, user_id: str) -> dict[str, Any]:
         else:
             to_unset["osm"] = ""  # unset, not null – same reason as in to_document
 
-    operations: dict[str, Any] = {"$set": to_set}
+    operations: dict[str, Any] = {"$set": to_set, "$pull": {"mock_fields": {"$in": edited}}}
     if to_unset:
         operations["$unset"] = to_unset
     return operations
@@ -95,6 +102,7 @@ def from_document(doc: dict[str, Any]) -> Place:
         photos=[photo_from_subdocument(p) for p in doc.get("photos", [])],
         rating=doc.get("rating", {}),
         is_mock=doc.get("is_mock", False),
+        mock_fields=doc.get("mock_fields", []),
         created_by=doc.get("created_by"),
         updated_by=doc.get("updated_by"),
         created_at=doc["created_at"],
@@ -129,8 +137,10 @@ async def place_exists(db: AsyncDatabase, place_id: ObjectId) -> bool:
     return await db[COLLECTION].count_documents({"_id": place_id}, limit=1) > 0
 
 
-async def create_place(db: AsyncDatabase, place: PlaceCreate, user_id: str, *, is_mock: bool = False) -> Place:
-    doc = to_document(place, user_id, is_mock=is_mock)
+async def create_place(
+    db: AsyncDatabase, place: PlaceCreate, user_id: str, *, is_mock: bool = False, mock_fields: Sequence[str] = ()
+) -> Place:
+    doc = to_document(place, user_id, is_mock=is_mock, mock_fields=mock_fields)
     try:
         result = await db[COLLECTION].insert_one(doc)
     except DuplicateKeyError as e:
