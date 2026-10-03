@@ -1,11 +1,11 @@
 {
-    "name": "miejscowki_map",
-    "short_name": "miejscowki_map",
+    "name": "Focus Map",
+    "short_name": "Focus Map",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#20252B",
+    "description": "Mapa miejscówek do pracy i nauki.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
