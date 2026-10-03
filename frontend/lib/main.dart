@@ -281,7 +281,10 @@ class _MapHomePageState extends State<MapHomePage> {
                 hintText: 'Szukaj miejscówki',
                 hintStyle: TextStyle(color: Color(0xFF7A7A7A), fontSize: 13),
                 prefixIcon: Icon(Icons.search_rounded, size: 19),
-                prefixIconConstraints: BoxConstraints(minWidth: 44),
+                prefixIconConstraints: BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 36,
+                ),
                 contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
               ),
@@ -318,10 +321,6 @@ class _MapHomePageState extends State<MapHomePage> {
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
-                          ),
-                          const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 18,
                           ),
                         ],
                       ),
