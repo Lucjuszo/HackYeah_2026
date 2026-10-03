@@ -18,10 +18,34 @@ def _osm_conflict(osm: OsmRef) -> HTTPException:
     return HTTPException(status.HTTP_409_CONFLICT, f"Place linked to OSM {osm.type}/{osm.id} already exists")
 
 
+def _parse_bbox(value: str) -> repo.BoundingBox:
+    def invalid(reason: str) -> HTTPException:
+        return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"bbox must be 'south,west,north,east': {reason}")
+
+    try:
+        south, west, north, east = (float(part) for part in value.split(","))
+    except ValueError:
+        raise invalid("four numbers expected")
+    if not (-90 <= south < north <= 90):
+        raise invalid("need -90 <= south < north <= 90")
+    if not (-180 <= west < east <= 180):
+        raise invalid("need -180 <= west < east <= 180")
+    if east - west > 180:  # a polygon wider than half the globe would be read as its complement
+        raise invalid("at most 180 degrees wide; omit bbox to search everywhere")
+    return repo.BoundingBox(south=south, west=west, north=north, east=east)
+
+
 def place_filter(
     lat: Annotated[float | None, Query(ge=-90, le=90)] = None,
     lon: Annotated[float | None, Query(ge=-180, le=180)] = None,
     radius_m: Annotated[int, Query(gt=0, le=50_000)] = 1000,
+    bbox: Annotated[
+        str | None,
+        Query(
+            description="Visible map area 'south,west,north,east' (degrees), any size; instead of lat/lon",
+            examples=["49.96,19.79,50.13,20.22"],
+        ),
+    ] = None,
     q: Annotated[str | None, Query(min_length=1, max_length=100, description="Part of the name or street")] = None,
     wifi: bool | None = None,
     power_outlets: bool | None = None,
@@ -35,11 +59,15 @@ def place_filter(
 ) -> repo.PlaceFilter:
     if (lat is None) != (lon is None):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Provide both lat and lon, or neither")
+    box = _parse_bbox(bbox) if bbox is not None else None
+    if box and lat is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Use either bbox or lat/lon, not both")
     if min_price is not None and max_price is not None and min_price > max_price:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "min_price cannot exceed max_price")
     return repo.PlaceFilter(
         near=Coordinates(lat=lat, lon=lon) if lat is not None else None,
         radius_m=radius_m,
+        bbox=box,
         q=q,
         wifi=wifi,
         power_outlets=power_outlets,

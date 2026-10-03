@@ -232,9 +232,22 @@ EARTH_RADIUS_M = 6_378_100  # what $centerSphere / $geoNear assume
 
 
 @dataclass
+class BoundingBox:
+    south: float
+    west: float
+    north: float
+    east: float
+
+    def polygon(self) -> dict[str, Any]:
+        s, w, n, e = self.south, self.west, self.north, self.east
+        return {"type": "Polygon", "coordinates": [[[w, s], [e, s], [e, n], [w, n], [w, s]]]}
+
+
+@dataclass
 class PlaceFilter:
     near: Coordinates | None = None
     radius_m: int = 1000
+    bbox: BoundingBox | None = None  # visible map area; not combined with `near`
     q: str | None = None
     wifi: bool | None = None
     power_outlets: bool | None = None
@@ -319,6 +332,8 @@ async def search_places(
         if sort == PlaceSort.DISTANCE:
             raise ValueError("sort=distance needs lat and lon")
         sort = sort or PlaceSort.OLDEST
+        if f.bbox:
+            match = {**match, "location": {"$geoWithin": {"$geometry": f.bbox.polygon()}}}
         pipeline = [{"$match": match}]
         count_query = match
     if sort != PlaceSort.DISTANCE:  # $geoNear already returns closest first

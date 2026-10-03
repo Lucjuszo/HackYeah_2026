@@ -13,7 +13,8 @@ from app.repositories import comments as comments_repo
 from app.repositories import places as places_repo
 from app.repositories import ratings as ratings_repo
 from app.repositories import users as users_repo
-from app.routers import auth, comments, media, photos, places, ratings
+from app.geocoding import geocoder
+from app.routers import auth, comments, geocode, media, photos, places, ratings
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
         )
         raise RuntimeError(f"Cannot reach MongoDB ({settings.mongo_target()}). {hint}") from e
     yield
+    await geocoder.aclose()
     await client.close()
 
 
@@ -56,6 +58,7 @@ app.include_router(photos.router)
 app.include_router(ratings.router)
 app.include_router(comments.router)
 app.include_router(media.router)
+app.include_router(geocode.router)
 
 
 @app.get("/health")

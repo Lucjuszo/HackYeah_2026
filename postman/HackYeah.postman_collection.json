@@ -1312,6 +1312,135 @@
           ]
         },
         {
+          "name": "Map viewport – whole Poland (bbox)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/places/summary?bbox=49.0,14.1,54.9,24.2&sort=rating",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "bbox",
+                  "value": "49.0,14.1,54.9,24.2"
+                },
+                {
+                  "key": "sort",
+                  "value": "rating"
+                }
+              ]
+            },
+            "description": "What the map sends: the visible area 'south,west,north,east', any size (no 50 km limit)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Created place visible\", () => pm.expect(pm.response.json().map(p => p.id)).to.include(pm.collectionVariables.get(\"placeId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Map viewport – bbox with lat/lon → 422",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/places?bbox=49.0,14.1,54.9,24.2&lat=50.06&lon=19.93",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places"
+              ],
+              "query": [
+                {
+                  "key": "bbox",
+                  "value": "49.0,14.1,54.9,24.2"
+                },
+                {
+                  "key": "lat",
+                  "value": "50.06"
+                },
+                {
+                  "key": "lon",
+                  "value": "19.93"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Geocode – city (Nominatim via backend)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/geocode?q=Gdańsk&limit=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "geocode"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "Gdańsk"
+                },
+                {
+                  "key": "limit",
+                  "value": "3"
+                }
+              ]
+            },
+            "description": "Location picker. Calls OpenStreetMap Nominatim (needs internet; cached, max 1 upstream request/s)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Gdańsk found\", () => pm.expect(pm.response.json()[0].display_name).to.include(\"Gdańsk\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Update – partial",
           "request": {
             "method": "PATCH",

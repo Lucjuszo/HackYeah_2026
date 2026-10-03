@@ -1,17 +1,23 @@
-# miejscowki_map
+# Miejscówki – frontend (Flutter)
 
-A new Flutter project.
+Mapa miejscówek w całej Polsce: mapa OpenStreetMap (`flutter_map`), lista i szczegóły miejsc z backendu
+(`app/`), filtry, wyszukiwanie miasta/adresu i „Moja lokalizacja”. Na razie tylko odczyt – bez logowania.
 
-## Getting Started
+```bash
+# backend (katalog główny repo)
+fastapi dev app/main.py
 
-This project is a starting point for a Flutter application.
+# front – w przeglądarce
+cd frontend
+flutter pub get
+flutter run -d chrome --dart-define=API_URL=http://localhost:8000
 
-A few resources to get you started if this is your first Flutter project:
+# testy
+flutter test
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- `API_URL` – adres backendu (domyślnie `http://localhost:8000`).
+- Wersja Windows (`flutter run -d windows`) wymaga włączonego Trybu dewelopera w Windows (pluginy potrzebują symlinków).
+- Kontrakt API i parametry wyszukiwania: [`docs/FRONTEND.md`](../docs/FRONTEND.md).
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Struktura: `lib/api/` (modele + klient HTTP), `lib/services/` (GPS), `lib/ui/` (ekrany i widżety), `lib/main.dart` (mapa i lista).

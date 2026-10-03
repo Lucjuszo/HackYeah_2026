@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # Places' opening hours are local time; "open now" is evaluated in this zone.
     timezone: str = "Europe/Warsaw"
 
+    # --- Geocoding (GET /geocode): city / address -> coordinates, via OpenStreetMap Nominatim.
+    # Public Nominatim policy: identifying User-Agent, max 1 request/s, results cached (we do all three).
+    nominatim_url: str = "https://nominatim.openstreetmap.org"
+    geocoding_user_agent: str = "HackYeah2026-Miejscowki/1.0 (+https://github.com/Lucjuszo/HackYeah_2026)"
+    geocoding_countries: str = "pl"  # comma-separated ISO codes; empty = whole world
+
     # --- Photos (app/storage.py): local disk, served under media_base_url
     media_dir: str = "media"
     media_base_url: str = "/media"

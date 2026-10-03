@@ -1,70 +1,323 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:math' as math;
 
-void main() => runApp(const MiejscowkiApp());
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+import 'api/models.dart';
+import 'api/places_api.dart';
+import 'services/location_service.dart';
+import 'ui/format.dart' as fmt;
+import 'ui/location_picker_page.dart';
+import 'ui/place_details_page.dart';
+import 'ui/theme.dart';
+import 'ui/widgets.dart';
+
+void main() => runApp(MiejscowkiApp(api: PlacesApi()));
 
 class MiejscowkiApp extends StatelessWidget {
-  const MiejscowkiApp({super.key});
+  const MiejscowkiApp({
+    required this.api,
+    this.locationService = const GeolocatorLocationService(),
+    this.showMapTiles = true,
+    super.key,
+  });
+
+  final PlacesApi api;
+  final LocationService locationService;
+
+  /// Off in widget tests: tiles come from tile.openstreetmap.org.
+  final bool showMapTiles;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Miejscówki',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF20252B)),
-        scaffoldBackgroundColor: Colors.white,
-        fontFamily: 'Arial',
+      theme: buildTheme(),
+      home: MapHomePage(
+        api: api,
+        locationService: locationService,
+        showMapTiles: showMapTiles,
       ),
-      home: const MapHomePage(),
     );
   }
 }
 
+/// Poland, for the initial view and "Cała Polska".
+final LatLngBounds polandBounds = LatLngBounds(
+  const LatLng(49.0, 14.1),
+  const LatLng(54.9, 24.2),
+);
+
+enum _PriceFilter {
+  any('Ceny', null, null),
+  free('Bezpłatne', null, 0),
+  upTo30('Do 30 zł', null, 30),
+  from30('Powyżej 30 zł', 30, null);
+
+  const _PriceFilter(this.label, this.minPrice, this.maxPrice);
+
+  final String label;
+  final int? minPrice;
+  final int? maxPrice;
+}
+
+enum _RatingFilter {
+  any('Oceny', null),
+  from45('4,5+', 4.5),
+  from4('4+', 4.0),
+  from3('3+', 3.0);
+
+  const _RatingFilter(this.label, this.minRating);
+
+  final String label;
+  final double? minRating;
+}
+
 class MapHomePage extends StatefulWidget {
-  const MapHomePage({super.key});
+  const MapHomePage({
+    required this.api,
+    required this.locationService,
+    this.showMapTiles = true,
+    super.key,
+  });
+
+  final PlacesApi api;
+  final LocationService locationService;
+  final bool showMapTiles;
 
   @override
   State<MapHomePage> createState() => _MapHomePageState();
 }
 
 class _MapHomePageState extends State<MapHomePage> {
-  final _searchController = TextEditingController();
-  final _newSpotController = TextEditingController();
-  final _sheetController = DraggableScrollableController();
+  static const double _sheetMin = 0.10;
+  static const double _sheetMax = 0.94;
 
-  String _rating = 'Oceny';
-  bool _isWifiActive = false;
-  String _sort = 'Sortuj';
-  String _price = 'Ceny';
-  String _location = '+ 0 km';
+  final _searchController = TextEditingController();
+  final _sheetController = DraggableScrollableController();
+  final _mapController = MapController();
+
+  // Filters
+  _RatingFilter _rating = _RatingFilter.any;
+  bool _wifi = false;
+  PlaceSort? _sort; // null = best rated first
+  _PriceFilter _price = _PriceFilter.any;
+  bool _openNow = false;
+  bool _powerOutlets = false;
+  Atmosphere? _atmosphere;
   bool _filtersOpen = false;
+
+  // Location: reference point for distances ("Moja lokalizacja", a searched city...)
+  LocationChoice _location = LocationChoice.wholeCountry;
+  final List<LocationChoice> _recentLocations = <LocationChoice>[];
+
+  // Results
+  List<PlaceSummary> _places = const <PlaceSummary>[];
+  int _total = 0;
+  bool _loading = false;
+  String? _error;
+  int _requestId = 0;
+  bool _mapReady = false;
+  Timer? _reloadDebounce;
+  String? _selectedId;
   bool _sheetExpanded = false;
-  final List<String> _filterOrder = <String>[
-    'rating',
-    'wifi',
-    'sort',
-    'price',
-    'filter',
-  ];
-  final List<String> _spots = <String>[
-    'Miejscówka nad rzeką',
-    'Polana pod lasem',
-  ];
 
   @override
   void dispose() {
+    _reloadDebounce?.cancel();
     _searchController.dispose();
-    _newSpotController.dispose();
     _sheetController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
-  void _showFilterMenu({
+  // --- searching
+
+  GeoBounds? _visibleBounds() {
+    final b = _mapController.camera.visibleBounds;
+    final west = math.max(-180.0, b.west);
+    final east = math.min(180.0, b.east);
+    if (east - west > 180 || east <= west) return null; // zoomed out past the world: everything
+    return GeoBounds(
+      south: math.max(-90.0, b.south),
+      west: west,
+      north: math.min(90.0, b.north),
+      east: east,
+    );
+  }
+
+  PlacesQuery _query() {
+    final common = (
+      text: _searchController.text,
+      minRating: _rating.minRating,
+      minPrice: _price.minPrice,
+      maxPrice: _price.maxPrice,
+    );
+    if (_sort == PlaceSort.distance) {
+      // "Closest" = around the chosen point if it's on screen, else the map centre,
+      // far enough to cover the visible area (the backend allows up to 50 km).
+      final camera = _mapController.camera;
+      final point = _location.point;
+      final near = point != null && camera.visibleBounds.contains(LatLng(point.lat, point.lon))
+          ? LatLng(point.lat, point.lon)
+          : camera.center;
+      final b = camera.visibleBounds;
+      const meter = Distance();
+      final farthest = <LatLng>[b.northWest, b.northEast, b.southWest, b.southEast]
+          .map((LatLng corner) => meter.as(LengthUnit.Meter, near, corner))
+          .reduce(math.max);
+      return PlacesQuery(
+        near: LatLon(near.latitude, near.longitude),
+        radiusM: farthest.clamp(500, 50000).round(),
+        text: common.text,
+        wifi: _wifi,
+        powerOutlets: _powerOutlets,
+        openNow: _openNow,
+        atmosphere: _atmosphere,
+        minRating: common.minRating,
+        minPrice: common.minPrice,
+        maxPrice: common.maxPrice,
+        sort: PlaceSort.distance,
+      );
+    }
+    return PlacesQuery(
+      bounds: _visibleBounds(),
+      text: common.text,
+      wifi: _wifi,
+      powerOutlets: _powerOutlets,
+      openNow: _openNow,
+      atmosphere: _atmosphere,
+      minRating: common.minRating,
+      minPrice: common.minPrice,
+      maxPrice: common.maxPrice,
+      sort: _sort ?? PlaceSort.rating,
+    );
+  }
+
+  Future<void> _reload() async {
+    if (!_mapReady) return;
+    _reloadDebounce?.cancel();
+    final id = ++_requestId;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final page = await widget.api.searchPlaces(_query());
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _places = page.items;
+        _total = page.total;
+        _loading = false;
+        if (!_places.any((PlaceSummary p) => p.id == _selectedId)) _selectedId = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  void _reloadSoon([Duration delay = const Duration(milliseconds: 450)]) {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(delay, _reload);
+  }
+
+  void _setFilter(VoidCallback change) {
+    setState(change);
+    _reload();
+  }
+
+  // --- distances, navigation
+
+  /// From the chosen location if there is one, else what the backend measured (map centre).
+  double? _distanceTo(PlaceSummary place) {
+    final point = _location.point;
+    if (point == null) return place.distanceM;
+    return const Distance().as(
+      LengthUnit.Meter,
+      LatLng(point.lat, point.lon),
+      LatLng(place.location.lat, place.location.lon),
+    );
+  }
+
+  void _openDetails(PlaceSummary place) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlaceDetailsPage(
+          api: widget.api,
+          summary: place,
+          distanceM: _distanceTo(place),
+        ),
+      ),
+    );
+  }
+
+  void _showLocation(LocationChoice choice) {
+    final bounds = choice.bounds;
+    final point = choice.point;
+    if (point == null) {
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: polandBounds, padding: const EdgeInsets.all(16)),
+      );
+    } else if (bounds != null) {
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: LatLngBounds(LatLng(bounds.south, bounds.west), LatLng(bounds.north, bounds.east)),
+          padding: const EdgeInsets.all(24),
+          maxZoom: 16,
+        ),
+      );
+    } else {
+      _mapController.move(LatLng(point.lat, point.lon), choice.isDevice ? 15 : 16);
+    }
+    _reload();
+  }
+
+  Future<void> _openLocationPicker() async {
+    final choice = await Navigator.of(context).push<LocationChoice>(
+      MaterialPageRoute<LocationChoice>(
+        builder: (_) => LocationPickerPage(
+          api: widget.api,
+          locationService: widget.locationService,
+          recent: _recentLocations,
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    setState(() {
+      _location = choice;
+      if (choice.point != null) {
+        _recentLocations.removeWhere((LocationChoice c) => c.label == choice.label);
+        _recentLocations.insert(0, choice);
+        if (_recentLocations.length > 5) _recentLocations.removeLast();
+      }
+    });
+    _showLocation(choice);
+  }
+
+  void _setSpotSheetExpanded(bool expanded) {
+    if (!_sheetController.isAttached) return;
+    _sheetController.animateTo(
+      expanded ? _sheetMax : _sheetMin,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  // --- header & filters
+
+  void _showOptions<T>({
     required String title,
-    required List<String> options,
-    required String value,
-    required ValueChanged<String> onSelected,
+    required List<T> options,
+    required T value,
+    required String Function(T) label,
+    required ValueChanged<T> onSelected,
   }) {
     showModalBottomSheet<void>(
       context: context,
@@ -77,127 +330,26 @@ class _MapHomePageState extends State<MapHomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
-              ...options.map(
-                (String option) => ListTile(
+              for (final option in options)
+                ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
-                    option == value
-                        ? Icons.radio_button_checked_rounded
-                        : Icons.radio_button_off_rounded,
-                    color: option == value
-                        ? const Color(0xFF20252B)
-                        : const Color(0xFF8A8A8A),
+                    option == value ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                    color: option == value ? AppColors.primary : const Color(0xFF8A8A8A),
                   ),
-                  title: Text(option),
+                  title: Text(label(option)),
                   onTap: () {
-                    onSelected(option);
                     Navigator.of(sheetContext).pop();
+                    onSelected(option);
                   },
                 ),
-              ),
             ],
           ),
         ),
       ),
     );
-  }
-
-  void _showAddSpotSheet() {
-    _newSpotController.clear();
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      builder: (BuildContext sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          0,
-          20,
-          MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'Dodaj miejscówkę',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _newSpotController,
-              autofocus: true,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(
-                hintText: 'Nazwa miejscówki',
-                filled: true,
-                fillColor: const Color(0xFFF1F1F1),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onSubmitted: (_) => _addSpot(sheetContext),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => _addSpot(sheetContext),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF20252B),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                ),
-                child: const Text('Dodaj'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _addSpot(BuildContext sheetContext) {
-    final name = _newSpotController.text.trim();
-    if (name.isEmpty) return;
-    setState(() => _spots.insert(0, name));
-    Navigator.of(sheetContext).pop();
-    if (_sheetController.isAttached) {
-      _sheetController.animateTo(
-        0.94,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
-    }
-  }
-
-  void _setSpotSheetExpanded(bool expanded) {
-    if (!_sheetController.isAttached) return;
-    _sheetController.animateTo(
-      expanded ? 0.94 : 0.10,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  Future<void> _openLocationPicker() async {
-    final selectedLocation = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(
-        builder: (BuildContext context) => const LocationPickerPage(),
-      ),
-    );
-    if (!mounted || selectedLocation == null) return;
-    setState(() => _location = selectedLocation);
   }
 
   Widget _filterChip({
@@ -211,7 +363,7 @@ class _MapHomePageState extends State<MapHomePage> {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Material(
-        color: active ? const Color(0xFF20252B) : const Color(0xFFE2E2E2),
+        color: active ? AppColors.primary : AppColors.chip,
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
           onTap: onTap,
@@ -234,11 +386,7 @@ class _MapHomePageState extends State<MapHomePage> {
                 ),
                 if (chevron) ...<Widget>[
                   const SizedBox(width: 5),
-                  Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 16,
-                    color: foreground,
-                  ),
+                  Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: foreground),
                 ],
               ],
             ),
@@ -248,94 +396,177 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
-  Widget _filterForId(String id) {
-    switch (id) {
-      case 'rating':
-        return _filterChip(
-          icon: Icons.star_border_rounded,
-          label: _rating,
-          active: _rating != 'Oceny',
-          onTap: () => _showFilterMenu(
-            title: 'Oceny',
-            options: <String>[
-              'Oceny',
-              '5 gwiazdek',
-              '4+ gwiazdki',
-              '3+ gwiazdki',
+  int get _extraFilterCount =>
+      (_openNow ? 1 : 0) + (_powerOutlets ? 1 : 0) + (_atmosphere != null ? 1 : 0);
+
+  List<Widget> _filterChips() => <Widget>[
+    _filterChip(
+      icon: Icons.star_border_rounded,
+      label: _rating.label,
+      active: _rating != _RatingFilter.any,
+      onTap: () => _showOptions<_RatingFilter>(
+        title: 'Oceny',
+        options: _RatingFilter.values,
+        value: _rating,
+        label: (r) => r == _RatingFilter.any ? 'Wszystkie' : '${r.label} gwiazdki',
+        onSelected: (r) => _setFilter(() => _rating = r),
+      ),
+    ),
+    _filterChip(
+      icon: Icons.wifi_rounded,
+      label: 'Wi-Fi',
+      active: _wifi,
+      chevron: false,
+      onTap: () => _setFilter(() => _wifi = !_wifi),
+    ),
+    _filterChip(
+      icon: Icons.swap_vert_rounded,
+      label: _sort?.label ?? 'Sortuj',
+      active: _sort != null,
+      onTap: () => _showOptions<PlaceSort?>(
+        title: 'Sortuj',
+        options: const <PlaceSort?>[null, PlaceSort.distance, PlaceSort.newest, PlaceSort.name],
+        value: _sort,
+        label: (s) => s?.label ?? 'Najwyżej oceniane',
+        onSelected: (s) => _setFilter(() => _sort = s),
+      ),
+    ),
+    _filterChip(
+      icon: Icons.payments_outlined,
+      label: _price.label,
+      active: _price != _PriceFilter.any,
+      onTap: () => _showOptions<_PriceFilter>(
+        title: 'Ceny',
+        options: _PriceFilter.values,
+        value: _price,
+        label: (p) => p == _PriceFilter.any ? 'Wszystkie' : p.label,
+        onSelected: (p) => _setFilter(() => _price = p),
+      ),
+    ),
+    _filterChip(
+      icon: Icons.tune_rounded,
+      label: _extraFilterCount == 0 ? 'Filtruj' : 'Filtruj ($_extraFilterCount)',
+      chevron: false,
+      active: _filtersOpen || _extraFilterCount > 0,
+      onTap: () => setState(() => _filtersOpen = !_filtersOpen),
+    ),
+  ];
+
+  Widget _toggle(String label, bool selected, VoidCallback onTap, {Key? key}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6, bottom: 6),
+      child: FilterChip(
+        key: key,
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        side: BorderSide.none,
+        backgroundColor: AppColors.chip,
+        selectedColor: AppColors.primary,
+        labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink),
+      ),
+    );
+  }
+
+  Widget _moreFilters() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Wrap(
+            children: <Widget>[
+              _toggle('Otwarte teraz', _openNow, () => _setFilter(() => _openNow = !_openNow),
+                  key: const ValueKey<String>('filter-open-now')),
+              _toggle('Gniazdka', _powerOutlets, () => _setFilter(() => _powerOutlets = !_powerOutlets)),
+              for (final atmosphere in Atmosphere.values)
+                _toggle(
+                  atmosphere.label,
+                  _atmosphere == atmosphere,
+                  () => _setFilter(() => _atmosphere = _atmosphere == atmosphere ? null : atmosphere),
+                ),
             ],
-            value: _rating,
-            onSelected: (String selected) => setState(() => _rating = selected),
           ),
-        );
-      case 'wifi':
-        return _filterChip(
-          icon: Icons.wifi_rounded,
-          label: 'Wi-Fi',
-          active: _isWifiActive,
-          onTap: () => setState(() => _isWifiActive = !_isWifiActive),
-        );
-      case 'sort':
-        return _filterChip(
-          icon: Icons.swap_vert_rounded,
-          label: _sort,
-          active: _sort != 'Sortuj',
-          onTap: () => _showFilterMenu(
-            title: 'Sortuj',
-            options: <String>[
-              'Sortuj',
-              'Najbliżej',
-              'Najwyżej oceniane',
-              'Najnowsze',
+          Row(
+            children: <Widget>[
+              const Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFF656565)),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  'Możesz łączyć kilka filtrów',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ),
+              if (_hasAnyFilter)
+                TextButton(
+                  onPressed: _clearFilters,
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  child: const Text('Wyczyść', style: TextStyle(fontSize: 12)),
+                ),
             ],
-            value: _sort,
-            onSelected: (String selected) => setState(() => _sort = selected),
           ),
-        );
-      case 'price':
-        return _filterChip(
-          icon: Icons.payments_outlined,
-          label: _price,
-          active: _price != 'Ceny',
-          onTap: () => _showFilterMenu(
-            title: 'Ceny',
-            options: <String>['Ceny', 'Bezpłatne', 'Do 30 zł', 'Powyżej 30 zł'],
-            value: _price,
-            onSelected: (String selected) => setState(() => _price = selected),
-          ),
-        );
-      case 'filter':
-        return _filterChip(
-          icon: Icons.tune_rounded,
-          label: 'Filtruj',
-          chevron: false,
-          active: _filtersOpen,
-          onTap: () => setState(() => _filtersOpen = !_filtersOpen),
-        );
-      default:
-        return const SizedBox.shrink();
-    }
+        ],
+      ),
+    );
+  }
+
+  bool get _hasAnyFilter =>
+      _rating != _RatingFilter.any ||
+      _wifi ||
+      _sort != null ||
+      _price != _PriceFilter.any ||
+      _extraFilterCount > 0 ||
+      _searchController.text.isNotEmpty;
+
+  void _clearFilters() {
+    _searchController.clear();
+    _setFilter(() {
+      _rating = _RatingFilter.any;
+      _wifi = false;
+      _sort = null;
+      _price = _PriceFilter.any;
+      _openNow = false;
+      _powerOutlets = false;
+      _atmosphere = null;
+    });
   }
 
   Widget _header() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(17, 10, 17, 0),
+      padding: const EdgeInsets.fromLTRB(17, 10, 17, 8),
       child: Column(
         children: <Widget>[
           Container(
             height: 36,
-            decoration: BoxDecoration(
-              color: const Color(0xFFDADADA),
-              borderRadius: BorderRadius.circular(22),
-            ),
+            decoration: BoxDecoration(color: AppColors.field, borderRadius: BorderRadius.circular(22)),
             child: TextField(
+              key: const ValueKey<String>('place-search'),
               controller: _searchController,
               textInputAction: TextInputAction.search,
-              decoration: const InputDecoration(
+              onChanged: (_) {
+                setState(() {});
+                _reloadSoon(const Duration(milliseconds: 350));
+              },
+              onSubmitted: (_) => _reload(),
+              decoration: InputDecoration(
                 hintText: 'Szukaj miejscówki',
-                hintStyle: TextStyle(color: Color(0xFF7A7A7A), fontSize: 13),
-                prefixIcon: Icon(Icons.search_rounded, size: 19),
-                prefixIconConstraints: BoxConstraints(minWidth: 44),
-                contentPadding: EdgeInsets.symmetric(vertical: 9),
+                hintStyle: const TextStyle(color: Color(0xFF7A7A7A), fontSize: 13),
+                prefixIcon: const Icon(Icons.search_rounded, size: 19),
+                prefixIconConstraints: const BoxConstraints(minWidth: 44),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Wyczyść',
+                        iconSize: 17,
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          _setFilter(() {});
+                        },
+                      ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 9),
                 border: InputBorder.none,
               ),
             ),
@@ -344,50 +575,35 @@ class _MapHomePageState extends State<MapHomePage> {
           Container(
             height: 36,
             padding: const EdgeInsets.only(left: 12, right: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFDADADA),
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      key: const ValueKey<String>('location-picker-trigger'),
-                      onTap: _openLocationPicker,
-                      borderRadius: BorderRadius.circular(22),
-                      child: Row(
-                        children: <Widget>[
-                          const Icon(Icons.location_on_outlined, size: 18),
-                          const Spacer(),
-                          Container(
-                            width: 1,
-                            height: 24,
-                            color: const Color(0xFF858585),
-                          ),
-                          const SizedBox(width: 9),
-                          Flexible(
-                            child: Text(
-                              _location,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 3),
-                          const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 18,
-                          ),
-                        ],
+            decoration: BoxDecoration(color: AppColors.field, borderRadius: BorderRadius.circular(22)),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                key: const ValueKey<String>('location-picker-trigger'),
+                onTap: _openLocationPicker,
+                borderRadius: BorderRadius.circular(22),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      _location.isDevice ? Icons.my_location_rounded : Icons.location_on_outlined,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        _location.label,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                       ),
                     ),
-                  ),
+                    Container(width: 1, height: 24, color: const Color(0xFF858585)),
+                    const SizedBox(width: 9),
+                    const Text('Zmień', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 3),
+                    const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -396,31 +612,13 @@ class _MapHomePageState extends State<MapHomePage> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(),
-              child: Row(children: _filterOrder.map(_filterForId).toList()),
+              child: Row(children: _filterChips()),
             ),
           ),
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 220),
-            crossFadeState: _filtersOpen
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            firstChild: Padding(
-              padding: const EdgeInsets.only(top: 9),
-              child: Row(
-                children: <Widget>[
-                  const Icon(
-                    Icons.info_outline_rounded,
-                    size: 15,
-                    color: Color(0xFF656565),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    'Możesz łączyć kilka filtrów',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-            ),
+            crossFadeState: _filtersOpen ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            firstChild: _moreFilters(),
             secondChild: const SizedBox(width: double.infinity, height: 0),
           ),
         ],
@@ -428,59 +626,174 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
+  // --- map
+
   Widget _map() {
-    return Stack(
-      fit: StackFit.expand,
+    final selected = _places.where((PlaceSummary p) => p.id == _selectedId);
+    final ordered = <PlaceSummary>[
+      ..._places.where((PlaceSummary p) => p.id != _selectedId),
+      ...selected, // drawn last = on top
+    ];
+    final point = _location.point;
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCameraFit: CameraFit.bounds(bounds: polandBounds, padding: const EdgeInsets.all(16)),
+        minZoom: 4,
+        maxZoom: 19,
+        backgroundColor: const Color(0xFFF2EFE9),
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+        ),
+        onMapReady: () {
+          // initialCameraFit isn't applied yet at this point: without this the first search
+          // would use flutter_map's default camera (Kyiv).
+          _mapController.fitCamera(
+            CameraFit.bounds(bounds: polandBounds, padding: const EdgeInsets.all(16)),
+          );
+          _mapReady = true;
+          _reload();
+        },
+        onPositionChanged: (MapCamera camera, bool hasGesture) {
+          if (hasGesture) _reloadSoon();
+        },
+        onTap: (_, _) {
+          if (_selectedId != null) setState(() => _selectedId = null);
+        },
+      ),
       children: <Widget>[
-        const CustomPaint(painter: MapPainter()),
-        const Positioned(
-          left: 42,
-          top: 112,
-          child: MapMarker(label: '4.8', color: Color(0xFF232A31)),
-        ),
-        const Positioned(
-          right: 52,
-          top: 245,
-          child: MapMarker(label: '4.5', color: Color(0xFF385B4C)),
-        ),
-        const Positioned(
-          left: 76,
-          bottom: 138,
-          child: MapMarker(label: '3.9', color: Color(0xFF765843)),
-        ),
-        Center(
-          child: IgnorePointer(
-            child: Text(
-              'MAPA',
-              style: TextStyle(
-                fontSize: 42,
-                letterSpacing: 1.5,
-                color: Color(0xFF111111),
-              ),
-            ),
+        if (widget.showMapTiles)
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'pl.hackyeah.miejscowki',
+            maxZoom: 19,
           ),
-        ),
-        Positioned(
-          right: 16,
-          bottom: 116,
-          child: Material(
-            color: Colors.white,
-            elevation: 2,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Centrowanie na Twojej lokalizacji'),
+        if (point != null)
+          MarkerLayer(
+            markers: <Marker>[
+              Marker(
+                point: LatLng(point.lat, point.lon),
+                width: 22,
+                height: 22,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2F80ED),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: const <BoxShadow>[BoxShadow(color: Color(0x40000000), blurRadius: 6)],
+                  ),
                 ),
               ),
-              child: const Padding(
-                padding: EdgeInsets.all(13),
-                child: Icon(Icons.my_location_rounded, size: 20),
+            ],
+          ),
+        MarkerLayer(
+          markers: <Marker>[
+            for (final place in ordered)
+              Marker(
+                key: ValueKey<String>('marker-${place.id}'),
+                point: LatLng(place.location.lat, place.location.lon),
+                width: 64,
+                height: 30,
+                child: GestureDetector(
+                  onTap: () => setState(() => _selectedId = place.id),
+                  child: Center(
+                    child: MapMarker(rating: place.rating.average, selected: place.id == _selectedId),
+                  ),
+                ),
               ),
-            ),
+          ],
+        ),
+        SimpleAttributionWidget(
+          source: const Text('OpenStreetMap contributors'),
+          alignment: Alignment.topRight,
+          backgroundColor: Colors.white.withValues(alpha: 0.75),
+        ),
+      ],
+    );
+  }
+
+  Widget _mapButtons(double bottom) {
+    Widget button(IconData icon, String tooltip, VoidCallback onTap, {Key? key}) => Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Material(
+        color: Colors.white,
+        elevation: 2,
+        shape: const CircleBorder(),
+        child: InkWell(
+          key: key,
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Tooltip(
+            message: tooltip,
+            child: Padding(padding: const EdgeInsets.all(12), child: Icon(icon, size: 20)),
           ),
         ),
+      ),
+    );
+    return Positioned(
+      right: 16,
+      bottom: bottom,
+      child: Column(
+        children: <Widget>[
+          if (_location.point != null)
+            button(Icons.my_location_rounded, 'Wróć do: ${_location.label}', () => _showLocation(_location)),
+          button(Icons.public_rounded, 'Cała Polska', () {
+            setState(() => _location = LocationChoice.wholeCountry);
+            _showLocation(LocationChoice.wholeCountry);
+          }, key: const ValueKey<String>('show-poland')),
+        ],
+      ),
+    );
+  }
+
+  // --- list
+
+  String get _listSubtitle {
+    if (_loading && _places.isEmpty) return 'Szukam miejscówek…';
+    final shown = _places.length < _total ? ' (pokazano ${_places.length})' : '';
+    final where = _sort == PlaceSort.distance ? 'w pobliżu' : 'na mapie';
+    return '${fmt.placesCount(_total)} $where$shown';
+  }
+
+  Widget _listContent() {
+    if (_error != null && _places.isEmpty) {
+      return MessageView(
+        icon: Icons.cloud_off_rounded,
+        title: 'Nie udało się wczytać miejsc',
+        message: _error,
+        onRetry: _reload,
+      );
+    }
+    if (!_loading && _places.isEmpty) {
+      return MessageView(
+        icon: Icons.search_off_rounded,
+        title: 'Brak miejscówek w tym obszarze',
+        message: _hasAnyFilter
+            ? 'Zmień filtry albo przesuń mapę.'
+            : 'Oddal lub przesuń mapę, żeby zobaczyć więcej.',
+        onRetry: _hasAnyFilter ? _clearFilters : null,
+      );
+    }
+    return Column(
+      children: <Widget>[
+        for (final place in _places)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: SpotListTile(
+              key: ValueKey<String>('spot-${place.id}'),
+              place: place,
+              distanceM: _distanceTo(place),
+              onTap: () => _openDetails(place),
+            ),
+          ),
+        if (_places.length < _total)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Przybliż mapę, żeby zobaczyć resztę miejsc.',
+              style: TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
+          ),
       ],
     );
   }
@@ -488,71 +801,62 @@ class _MapHomePageState extends State<MapHomePage> {
   Widget _spotSheet() {
     return DraggableScrollableSheet(
       controller: _sheetController,
-      initialChildSize: 0.10,
-      minChildSize: 0.10,
-      maxChildSize: 0.94,
+      initialChildSize: _sheetMin,
+      minChildSize: _sheetMin,
+      maxChildSize: _sheetMax,
       snap: true,
-      snapSizes: const <double>[0.10, 0.94],
+      snapSizes: const <double>[_sheetMin, _sheetMax],
       builder: (BuildContext context, ScrollController scrollController) =>
           NotificationListener<DraggableScrollableNotification>(
             onNotification: (DraggableScrollableNotification notification) {
               final expanded = notification.extent > 0.42;
-              if (expanded != _sheetExpanded) {
-                setState(() => _sheetExpanded = expanded);
-              }
+              if (expanded != _sheetExpanded) setState(() => _sheetExpanded = expanded);
               return false;
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               decoration: BoxDecoration(
-                color: _sheetExpanded ? Colors.white : const Color(0xFFF0F0F0),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
+                color: _sheetExpanded ? Colors.white : AppColors.sheet,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
                 boxShadow: const <BoxShadow>[
-                  BoxShadow(
-                    color: Color(0x19000000),
-                    blurRadius: 12,
-                    offset: Offset(0, -2),
-                  ),
+                  BoxShadow(color: Color(0x19000000), blurRadius: 12, offset: Offset(0, -2)),
                 ],
               ),
               child: Stack(
                 children: <Widget>[
                   ListView(
                     controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 92),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 40),
                     children: <Widget>[
-                      const SizedBox(height: 35),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 0),
-                        child: Text(
-                          'Miejscówki',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF191919),
+                      const SizedBox(height: 22),
+                      Row(
+                        children: <Widget>[
+                          const Expanded(
+                            child: Text(
+                              'Miejscówki',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF191919),
+                              ),
+                            ),
                           ),
-                        ),
+                          if (_loading)
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 7),
-                      const Text(
-                        '32 miejsca',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF777777),
-                        ),
+                      Text(
+                        _listSubtitle,
+                        key: const ValueKey<String>('places-count'),
+                        style: const TextStyle(fontSize: 12, color: AppColors.muted),
                       ),
                       const SizedBox(height: 18),
-                      ..._spots.asMap().entries.map(
-                        (MapEntry<int, String> entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: SpotListTile(
-                            name: entry.value,
-                            index: entry.key,
-                          ),
-                        ),
-                      ),
+                      _listContent(),
                     ],
                   ),
                   Positioned(
@@ -586,22 +890,6 @@ class _MapHomePageState extends State<MapHomePage> {
                       ),
                     ),
                   ),
-                  Positioned(
-                    right: 16,
-                    bottom: 16,
-                    child: Material(
-                      color: const Color(0xFFD9D9D9),
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: _showAddSpotSheet,
-                        child: const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: Icon(Icons.add_rounded, size: 25),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -611,157 +899,56 @@ class _MapHomePageState extends State<MapHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final selected = _places.where((PlaceSummary p) => p.id == _selectedId).firstOrNull;
     return Scaffold(
       body: SafeArea(
         bottom: false,
         child: Column(
           children: <Widget>[
             _header(),
-            Expanded(child: Stack(children: <Widget>[_map(), _spotSheet()])),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class LocationPickerPage extends StatefulWidget {
-  const LocationPickerPage({super.key});
-
-  @override
-  State<LocationPickerPage> createState() => _LocationPickerPageState();
-}
-
-class _LocationPickerPageState extends State<LocationPickerPage> {
-  final TextEditingController _locationController = TextEditingController();
-  final List<String> _suggestions = <String>[
-    'Gdańsk, Wrzeszcz',
-    'Gdańsk, Oliwa',
-    'Sopot',
-    'Gdynia',
-  ];
-
-  @override
-  void dispose() {
-    _locationController.dispose();
-    super.dispose();
-  }
-
-  void _selectLocation(String location) {
-    Navigator.of(context).pop(location);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _locationController.text.trim().toLowerCase();
-    final locations = _suggestions
-        .where((String location) => location.toLowerCase().contains(query))
-        .toList();
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          key: const ValueKey<String>('location-back'),
-          tooltip: 'Wróć',
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: const Text(
-          'Wybierz lokalizację',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-        ),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          children: <Widget>[
-            TextField(
-              controller: _locationController,
-              autofocus: true,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'Wpisz miasto lub adres',
-                prefixIcon: const Icon(Icons.search_rounded),
-                suffixIcon: _locationController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () {
-                          _locationController.clear();
-                          setState(() {});
-                        },
-                      ),
-                filled: true,
-                fillColor: const Color(0xFFE7E7E7),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(22),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Material(
-              color: const Color(0xFFF1F1F1),
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => _selectLocation('Moja lokalizacja'),
-                child: const Padding(
-                  padding: EdgeInsets.all(15),
-                  child: Row(
+            Expanded(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final sheetTop = constraints.maxHeight * _sheetMin;
+                  return Stack(
                     children: <Widget>[
-                      Icon(Icons.my_location_rounded, color: Color(0xFF20252B)),
-                      SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            'Użyj mojej lokalizacji',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          SizedBox(height: 3),
-                          Text(
-                            'Znajdź miejscówki w pobliżu',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF777777),
+                      _map(),
+                      if (_error != null && _places.isNotEmpty)
+                        Positioned(
+                          top: 10,
+                          left: 16,
+                          right: 16,
+                          child: Material(
+                            color: AppColors.closed,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: Text(
+                                _error!,
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                              ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      _mapButtons(sheetTop + (selected != null ? 150 : 16)),
+                      if (selected != null)
+                        Positioned(
+                          left: 12,
+                          right: 12,
+                          bottom: sheetTop + 10,
+                          child: _PlacePreviewCard(
+                            place: selected,
+                            distanceM: _distanceTo(selected),
+                            onTap: () => _openDetails(selected),
+                            onClose: () => setState(() => _selectedId = null),
+                          ),
+                        ),
+                      _spotSheet(),
                     ],
-                  ),
-                ),
+                  );
+                },
               ),
             ),
-            const SizedBox(height: 24),
-            const Text(
-              'Ostatnio wybrane',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 7),
-            if (locations.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Text(
-                  'Brak pasujących lokalizacji',
-                  style: TextStyle(color: Color(0xFF777777)),
-                ),
-              )
-            else
-              ...locations.map(
-                (String location) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.location_on_outlined),
-                  title: Text(location),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => _selectLocation(location),
-                ),
-              ),
           ],
         ),
       ),
@@ -769,42 +956,74 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   }
 }
 
-class MapMarker extends StatelessWidget {
-  const MapMarker({required this.label, required this.color, super.key});
+/// Floating card above the list after tapping a pin.
+class _PlacePreviewCard extends StatelessWidget {
+  const _PlacePreviewCard({
+    required this.place,
+    required this.onTap,
+    required this.onClose,
+    this.distanceM,
+  });
 
-  final String label;
-  final Color color;
+  final PlaceSummary place;
+  final double? distanceM;
+  final VoidCallback onTap;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(15),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x28000000),
-            blurRadius: 5,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Icon(Icons.star_rounded, color: Colors.white, size: 12),
-            const SizedBox(width: 3),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 11,
+    return Material(
+      key: const ValueKey<String>('place-preview'),
+      color: Colors.white,
+      elevation: 6,
+      shadowColor: const Color(0x40000000),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: <Widget>[
+              PlaceImage(url: place.thumbnailUrl, width: 96, height: 96, radius: 14),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      place.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                    ),
+                    const SizedBox(height: 4),
+                    RatingLine(rating: place.rating),
+                    const SizedBox(height: 4),
+                    Text(
+                      [place.address.short, if (distanceM != null) fmt.distance(distanceM!)].join(' · '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                    ),
+                    const SizedBox(height: 4),
+                    OpenStatusLine(place: place, fontSize: 11),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Zobacz szczegóły ›',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              IconButton(
+                tooltip: 'Zamknij',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: onClose,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -812,280 +1031,108 @@ class MapMarker extends StatelessWidget {
 }
 
 class SpotListTile extends StatelessWidget {
-  const SpotListTile({required this.name, required this.index, super.key});
+  const SpotListTile({
+    required this.place,
+    required this.onTap,
+    this.distanceM,
+    super.key,
+  });
 
-  final String name;
-  final int index;
+  final PlaceSummary place;
+  final double? distanceM;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bool isOpen = index.isEven;
-    final String reviewCount = index.isEven ? '217' : '47';
-    final String place = index.isEven ? 'Gdańsk, Wrzeszcz' : 'Gdańsk, Oliwa';
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFD7D7D7))),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Container(
-            width: 108,
-            height: 108,
-            decoration: BoxDecoration(
-              color: const Color(0xFFD9D9D9),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(
-              Icons.landscape_outlined,
-              size: 30,
-              color: Color(0xFFB5B5B5),
-            ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 7, right: 3),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: Color(0xFF111111),
+    final price = fmt.priceLabel(place.priceRange, place.usagePrice);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.divider)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Stack(
+              children: <Widget>[
+                PlaceImage(url: place.thumbnailUrl, width: 108, height: 108),
+                if (place.photoCount > 1)
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0x99000000),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const Icon(Icons.photo_library_outlined, size: 10, color: Colors.white),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${place.photoCount}',
+                            style: const TextStyle(fontSize: 10, color: Colors.white),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: <Widget>[
-                      ...List<Widget>.generate(
-                        5,
-                        (int _) => const Icon(
-                          Icons.star_rounded,
-                          size: 12,
-                          color: Color(0xFF111111),
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        '($reviewCount)',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF777777),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.location_on_outlined,
-                        size: 12,
-                        color: Color(0xFF777777),
-                      ),
-                      const SizedBox(width: 3),
-                      Expanded(
-                        child: Text(
-                          place,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Color(0xFF777777),
+              ],
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 7, right: 3),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      place.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.ink),
+                    ),
+                    const SizedBox(height: 4),
+                    RatingLine(rating: place.rating),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: <Widget>[
+                        const Icon(Icons.location_on_outlined, size: 12, color: AppColors.muted),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            [place.address.short, if (distanceM != null) fmt.distance(distanceM!)].join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 10, color: AppColors.muted),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: <Widget>[
-                      Text(
-                        isOpen ? 'Otwarte teraz' : 'Zamknięte',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: isOpen
-                              ? const Color(0xFF2C7A45)
-                              : const Color(0xFFB53131),
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        isOpen ? 'do 20:00' : 'do 9:00',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF777777),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.wifi_rounded,
-                        size: 13,
-                        color: Color(0xFF4E4E4E),
-                      ),
-                      const SizedBox(width: 3),
-                      const Text(
-                        'Wi-Fi',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF4E4E4E),
-                        ),
-                      ),
-                      const SizedBox(width: 11),
-                      const Icon(
-                        Icons.power_rounded,
-                        size: 13,
-                        color: Color(0xFF4E4E4E),
-                      ),
-                      const SizedBox(width: 3),
-                      const Text(
-                        'Gniazdka',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF4E4E4E),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    OpenStatusLine(place: place),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: <Widget>[
+                        Expanded(child: AmenityBadges(amenities: place.amenities)),
+                        if (price != null) ...<Widget>[
+                          const SizedBox(width: 6),
+                          Pill(price),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}
-
-class MapPainter extends CustomPainter {
-  const MapPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = const Color(0xFFF8F8F7),
-    );
-
-    final riverPaint = Paint()..color = const Color(0xFFE7EEF0);
-    final river = Path()
-      ..moveTo(size.width * .72, -20)
-      ..cubicTo(
-        size.width * .55,
-        size.height * .18,
-        size.width * .92,
-        size.height * .30,
-        size.width * .69,
-        size.height * .47,
-      )
-      ..cubicTo(
-        size.width * .53,
-        size.height * .59,
-        size.width * .74,
-        size.height * .76,
-        size.width * .58,
-        size.height + 20,
-      )
-      ..lineTo(size.width * .92, size.height + 20)
-      ..lineTo(size.width * .95, -20)
-      ..close();
-    canvas.drawPath(river, riverPaint);
-
-    final minorRoad = Paint()
-      ..color = const Color(0xFFD5D4CF)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    final roads = <List<Offset>>[
-      <Offset>[
-        Offset(-20, size.height * .18),
-        Offset(size.width * .35, size.height * .27),
-        Offset(size.width + 20, size.height * .13),
-      ],
-      <Offset>[
-        Offset(-20, size.height * .67),
-        Offset(size.width * .25, size.height * .56),
-        Offset(size.width + 20, size.height * .70),
-      ],
-      <Offset>[
-        Offset(size.width * .14, -20),
-        Offset(size.width * .28, size.height * .35),
-        Offset(size.width * .20, size.height + 20),
-      ],
-      <Offset>[
-        Offset(size.width * .48, -20),
-        Offset(size.width * .44, size.height * .30),
-        Offset(size.width * .24, size.height + 20),
-      ],
-      <Offset>[
-        Offset(size.width * .92, -20),
-        Offset(size.width * .73, size.height * .26),
-        Offset(size.width * .81, size.height + 20),
-      ],
-    ];
-    for (final points in roads) {
-      final path = Path()..moveTo(points.first.dx, points.first.dy);
-      for (var i = 1; i < points.length; i++) {
-        path.lineTo(points[i].dx, points[i].dy);
-      }
-      canvas.drawPath(path, minorRoad);
-    }
-
-    final mainRoad = Paint()
-      ..color = const Color(0xFFBDBCB6)
-      ..strokeWidth = 5
-      ..style = PaintingStyle.stroke;
-    final diagonal = Path()
-      ..moveTo(-20, size.height * .42)
-      ..cubicTo(
-        size.width * .3,
-        size.height * .25,
-        size.width * .65,
-        size.height * .65,
-        size.width + 20,
-        size.height * .48,
-      );
-    canvas.drawPath(diagonal, mainRoad);
-
-    final park = Paint()..color = const Color(0xFFE7EBDD);
-    canvas.drawOval(
-      Rect.fromLTWH(
-        size.width * .06,
-        size.height * .22,
-        size.width * .24,
-        size.height * .22,
-      ),
-      park,
-    );
-    canvas.drawOval(
-      Rect.fromLTWH(
-        size.width * .34,
-        size.height * .64,
-        size.width * .28,
-        size.height * .20,
-      ),
-      park,
-    );
-
-    final dot = Paint()..color = const Color(0xFFC5C7C0);
-    for (var i = 0; i < 14; i++) {
-      final x = ((i * 73) % 100) / 100 * size.width;
-      final y = ((i * 47 + 12) % 100) / 100 * size.height;
-      canvas.drawCircle(Offset(x, y), 1.5, dot);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant MapPainter oldDelegate) => false;
 }

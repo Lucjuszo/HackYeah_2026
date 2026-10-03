@@ -230,3 +230,49 @@ class TestDeletePlace:
     @pytest.mark.parametrize("place_id", [str(ObjectId()), "not-an-id"])
     def test_unknown(self, client, place_id):
         assert client.delete(f"/places/{place_id}", headers=as_admin()).status_code == 404
+
+
+GDANSK = {"lat": 54.3520, "lon": 18.6466}
+ZAKOPANE = {"lat": 49.2992, "lon": 19.9496}
+KRAKOW_BBOX = "49.96,19.79,50.13,20.22"
+POLAND_BBOX = "49.0,14.1,54.9,24.2"
+
+
+class TestBoundingBox:
+    @pytest.fixture(autouse=True)
+    def places_across_poland(self, client, minimal_payload):
+        add_place(client, minimal_payload, "rynek", RYNEK)
+        add_place(client, minimal_payload, "nowa huta", {"lat": 50.0720, "lon": 20.0378})
+        add_place(client, minimal_payload, "zakopane", ZAKOPANE)
+        add_place(client, minimal_payload, "gdansk", GDANSK)
+        add_place(client, minimal_payload, "warsaw", WARSAW)
+
+    def test_city_viewport(self, client):
+        response = client.get("/places/summary", params={"bbox": KRAKOW_BBOX, "sort": "name"})
+        assert names(response) == ["nowa huta", "rynek"]
+        assert response.headers["X-Total-Count"] == "2"
+        assert all(p["distance_m"] is None for p in response.json())
+
+    def test_whole_country_beyond_50_km(self, client):
+        response = client.get("/places", params={"bbox": POLAND_BBOX, "sort": "name"})
+        assert names(response) == ["gdansk", "nowa huta", "rynek", "warsaw", "zakopane"]
+
+    def test_combines_with_filters(self, client, minimal_payload):
+        add_place(client, minimal_payload, "rynek wifi", RYNEK, amenities={"wifi": True})
+        response = client.get("/places", params={"bbox": KRAKOW_BBOX, "wifi": "true"})
+        assert names(response) == ["rynek wifi"]
+
+    def test_with_lat_lon_rejected(self, client):
+        assert client.get("/places", params={"bbox": KRAKOW_BBOX, **RYNEK}).status_code == 422
+
+    @pytest.mark.parametrize(
+        "bbox",
+        ["1,2,3", "a,b,c,d", "50,19,49,20", "49,20,50,19", "-91,0,0,10", "0,-170,10,170", "49,19,50,181"],
+    )
+    def test_invalid(self, client, bbox):
+        response = client.get("/places", params={"bbox": bbox})
+        assert response.status_code == 422
+        assert "bbox" in response.text
+
+    def test_distance_sort_needs_point(self, client):
+        assert client.get("/places", params={"bbox": KRAKOW_BBOX, "sort": "distance"}).status_code == 422

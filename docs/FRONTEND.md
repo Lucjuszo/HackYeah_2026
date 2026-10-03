@@ -51,7 +51,8 @@ Parametry wyszukiwania (te same dla `/places` i `/places/summary`):
 
 | Parametr | Opis |
 |---|---|
-| `lat`, `lon`, `radius_m` | w promieniu (domyślnie 1000 m, max 50 km); odpowiedź ma `distance_m` |
+| `bbox` | `south,west,north,east` – **widoczny obszar mapy**, dowolnej wielkości (od ulicy po całą Polskę). Zamiast `lat`/`lon` |
+| `lat`, `lon`, `radius_m` | w promieniu (domyślnie 1000 m, max 50 km); odpowiedź ma `distance_m`; potrzebne do `sort=distance` |
 | `q` | fragment nazwy lub ulicy, bez rozróżniania wielkości liter |
 | `wifi`, `power_outlets` | `true` / `false` |
 | `atmosphere` | `quiet` / `chatty` / `lively` |
@@ -85,6 +86,12 @@ odczytać, np. „tanio” – takie miejsca nie łapią się w filtry cen). Fil
 | Bezpłatne | `max_price=0` |
 | Do 30 zł | `max_price=30` |
 | Powyżej 30 zł | `min_price=30` |
+
+## Wybór lokalizacji (`GET /geocode`)
+
+`GET /geocode?q=Gdańsk` → `[{name, display_name, lat, lon, kind, bbox: [south, north, west, east]}]` – miasta, dzielnice
+i adresy w Polsce (OpenStreetMap Nominatim przez backend: wymagany User-Agent, limit 1 zapytanie/s i cache po stronie
+backendu, dlatego front nie woła Nominatim bezpośrednio). Bez logowania. `503` = wyszukiwarka adresów chwilowo niedostępna.
 
 ## Zdjęcia
 
