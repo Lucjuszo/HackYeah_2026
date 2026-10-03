@@ -1,6 +1,6 @@
 # Kolekcja Postmana
 
-`HackYeah.postman_collection.json` – 43 zapytania z testami, ułożone w scenariusz:
+`HackYeah.postman_collection.json` – 53 zapytania z testami, ułożone w scenariusz:
 
 | Folder | Co robi |
 |---|---|
@@ -8,7 +8,7 @@
 | `1. Places` | dodanie, odczyt, wyszukiwanie, edycje częściowe (merge `amenities`, czyszczenie `null`, link do OSM, edycja przez innego użytkownika), błędy 401/404/422 |
 | `2. Ratings` | `anna` 5 → `bartek` 3 → `anna` zmienia na 4 → usuwa; testy sprawdzają średnią na każdym kroku |
 | `3. Comments` | autor edytuje, inny użytkownik dostaje 403, admin edytuje i usuwa |
-| `4. Photos` | upload, pobranie pliku, 403 dla cudzego zdjęcia, usunięcie własnego |
+| `4. Photos` | upload (wersja pełna ≤1600 px + miniatura ≤400 px, WebP), lista, metadane, pobranie pliku (`/file?size=full\|thumbnail&download=true` i adres `/media/...`), 401/403/404, usunięcie własnego |
 
 ## Start
 
@@ -25,7 +25,8 @@
 
    Logi logowania widać w Postman → **Console** (na dole okna).
 4. Foldery uruchamiaj po kolei (zapisują `placeId`, `commentId`, ... dla kolejnych) albo całość: kolekcja → **Run**.
-5. Przed `4. Photos`: w *Upload photo* → *Body* → pole `file` → wybierz dowolny obrazek.
+5. `4. Photos` wysyła `postman/sample-photo.jpg`. Postman szuka pliku względem *Settings → General → Working directory*
+   – ustaw tam katalog repo albo w *Upload photo* → *Body* → pole `file` wybierz dowolny obrazek.
 
 Jeśli API nie jest na `http://localhost:8000`: kolekcja → *Variables* → `baseUrl`.
 
@@ -48,6 +49,6 @@ zrobione w aplikacji (własne zapytania dopisuj w osobnej kolekcji albo przenie�
 
 ```bash
 npx newman run postman/HackYeah.postman_collection.json --env-var baseUrl=http://localhost:8000 \
-  --folder "1. Places" --folder "2. Ratings" --folder "3. Comments"
+  --folder "1. Places" --folder "2. Ratings" --folder "3. Comments" --folder "4. Photos"
 ```
-(upload zdjęcia wymaga wskazania pliku, dlatego w CLI najprościej pominąć `4. Photos`)
+(uruchamiaj z katalogu repo – upload zdjęcia bierze `postman/sample-photo.jpg` ze ścieżki względnej)

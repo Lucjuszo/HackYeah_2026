@@ -9,15 +9,24 @@ from app.config import settings
 class Storage(Protocol):
     async def save(self, key: str, data: bytes, content_type: str) -> None: ...
     async def delete(self, key: str) -> None: ...
+    def path(self, key: str) -> Path | None: ...
     def url(self, key: str) -> str: ...
 
 
 class LocalStorage:
-    """Files on disk, served by FastAPI under media_base_url. Fine for dev and a single small VPS."""
+    """Files on disk, served under media_base_url. Fine for dev and a single small VPS."""
 
     def __init__(self, root: str, base_url: str) -> None:
         self.root = Path(root)
         self.base_url = base_url.rstrip("/")
+
+    def path(self, key: str) -> Path | None:
+        """Path of the stored file, None if it doesn't exist or the key escapes the media dir ("../")."""
+        root = self.root.resolve()
+        path = (root / key).resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            return None
+        return path
 
     async def save(self, key: str, data: bytes, content_type: str) -> None:
         path = self.root / key

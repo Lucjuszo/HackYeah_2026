@@ -133,13 +133,25 @@ class RatingSummary(BaseModel):
     count: int = 0
 
 
+class PhotoVariant(BaseModel):
+    url: str
+    width: int
+    height: int
+    size: int
+
+
 class Photo(BaseModel):
+    """`url`/`width`/`height`/`size` describe the full version (longer side <= MAX_PHOTO_DIMENSION)."""
+
     id: str
     url: str
     content_type: str
     width: int
     height: int
     size: int
+    thumbnail: PhotoVariant | None = Field(
+        None, description="Small version for lists and maps (longer side <= THUMBNAIL_DIMENSION)"
+    )
     uploaded_by: str | None = None
     created_at: datetime
 

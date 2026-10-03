@@ -115,6 +115,18 @@
       "value": ""
     },
     {
+      "key": "thumbnailUrl",
+      "value": ""
+    },
+    {
+      "key": "photoSize",
+      "value": ""
+    },
+    {
+      "key": "thumbnailSize",
+      "value": ""
+    },
+    {
       "key": "osmId",
       "value": ""
     },
@@ -1781,10 +1793,344 @@
     },
     {
       "name": "4. Photos",
-      "description": "Before running: in 'Upload photo' → Body → pick an image file for the `file` field.",
+      "description": "Upload (full + thumbnail), list, metadata, download (endpoint and /media url), permissions, delete. Upload uses postman/sample-photo.jpg (working directory = repo root).",
       "item": [
         {
-          "name": "Upload photo",
+          "name": "Upload photo (creates full + thumbnail)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos"
+              ]
+            },
+            "description": "multipart/form-data, field `file`: JPEG/PNG/WebP/GIF/BMP..., max 10 MB. Stored as WebP in two versions: full (longer side <= 1600 px) and thumbnail (<= 400 px), EXIF (GPS) stripped.\n\nUses `postman/sample-photo.jpg` – if Postman can't find it, set Settings → General → Working directory to the repo root or pick any image in Body → `file`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "postman/sample-photo.jpg"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Full version + thumbnail\", () => {",
+                  "  pm.expect(body.content_type).to.eql(\"image/webp\");",
+                  "  pm.expect(Math.max(body.width, body.height)).to.be.at.most(1600);",
+                  "  pm.expect(body.thumbnail).to.be.an(\"object\");",
+                  "  pm.expect(Math.max(body.thumbnail.width, body.thumbnail.height)).to.be.at.most(400);",
+                  "  pm.expect(body.thumbnail.size).to.be.below(body.size);",
+                  "});",
+                  "pm.collectionVariables.set(\"photoId\", body.id);",
+                  "pm.collectionVariables.set(\"photoUrl\", body.url);",
+                  "pm.collectionVariables.set(\"thumbnailUrl\", body.thumbnail.url);",
+                  "pm.collectionVariables.set(\"photoSize\", body.size);",
+                  "pm.collectionVariables.set(\"thumbnailSize\", body.thumbnail.size);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List photos of the place",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Contains the uploaded photo\", () => {",
+                  "  const ids = pm.response.json().map(p => p.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get(\"photoId\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get photo metadata",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos/{{photoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos",
+                "{{photoId}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Same photo\", () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get(\"photoId\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Download photo – full",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos/{{photoId}}/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos",
+                "{{photoId}}",
+                "file"
+              ]
+            },
+            "description": "`size=full` (default) or `thumbnail`; `download=true` → `Content-Disposition: attachment`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type image/webp\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.eql(\"image/webp\"));",
+                  "pm.test(\"Full version\", () => pm.expect(pm.response.responseSize).to.eql(Number(pm.collectionVariables.get(\"photoSize\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Download photo – thumbnail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos/{{photoId}}/file?size=thumbnail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos",
+                "{{photoId}}",
+                "file"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "thumbnail"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type image/webp\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.eql(\"image/webp\"));",
+                  "pm.test(\"Thumbnail\", () => pm.expect(pm.response.responseSize).to.eql(Number(pm.collectionVariables.get(\"thumbnailSize\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Download photo as attachment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos/{{photoId}}/file?download=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos",
+                "{{photoId}}",
+                "file"
+              ],
+              "query": [
+                {
+                  "key": "download",
+                  "value": "true"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Attachment\", () => pm.expect(pm.response.headers.get(\"Content-Disposition\")).to.include(\"attachment\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get photo file via url (/media)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{photoUrl}}",
+              "host": [
+                "{{baseUrl}}{{photoUrl}}"
+              ]
+            },
+            "description": "The `url` / `thumbnail.url` from the photo JSON – what the frontend puts in <img src>. Cached forever.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type image/webp\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.eql(\"image/webp\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get thumbnail file via url (/media)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{thumbnailUrl}}",
+              "host": [
+                "{{baseUrl}}{{thumbnailUrl}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type image/webp\", () => pm.expect(pm.response.headers.get(\"Content-Type\")).to.eql(\"image/webp\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Download unknown photo → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos/does-not-exist/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos",
+                "does-not-exist",
+                "file"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload without login → 401",
           "request": {
             "method": "POST",
             "header": [],
@@ -1805,35 +2151,8 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": []
+                  "src": "postman/sample-photo.jpg"
                 }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "const body = pm.response.json();",
-                  "pm.collectionVariables.set(\"photoId\", body.id);",
-                  "pm.collectionVariables.set(\"photoUrl\", body.url);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get photo file",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}{{photoUrl}}",
-              "host": [
-                "{{baseUrl}}{{photoUrl}}"
               ]
             },
             "auth": {
@@ -1846,7 +2165,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
                 ]
               }
             }
@@ -1917,6 +2236,67 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Download deleted photo → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/places/{{placeId}}/photos/{{photoId}}/file",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "places",
+                "{{placeId}}",
+                "photos",
+                "{{photoId}}",
+                "file"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get deleted thumbnail via url → 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}{{thumbnailUrl}}",
+              "host": [
+                "{{baseUrl}}{{thumbnailUrl}}"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
                 ]
               }
             }

@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 from pydantic import SecretStr, field_validator
@@ -7,7 +8,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # extra="ignore": unrelated keys in .env must not crash the app.
     # env_ignore_empty: "JWT_SECRET=" in .env means "not set", not an empty secret.
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
+    # HACKYEAH_ENV_FILE="" disables the .env file entirely (tests must not pick up a developer's secrets).
+    model_config = SettingsConfigDict(
+        env_file=os.getenv("HACKYEAH_ENV_FILE", ".env") or None, extra="ignore", env_ignore_empty=True
+    )
 
     # Remote MongoDB (e.g. Atlas) is the default. USE_REMOTE_MONGO=false switches to the
     # docker compose container below; tests always force the container.
@@ -21,11 +25,12 @@ class Settings(BaseSettings):
 
     mongo_db: str = "hackyeah"
 
-    # Local disk for dev / single-VPS prod; swap for an S3-compatible backend later (see app/storage.py).
+    # --- Photos (app/storage.py): local disk, served under media_base_url
     media_dir: str = "media"
     media_base_url: str = "/media"
-    max_photo_bytes: int = 10 * 1024 * 1024
-    max_photo_dimension: int = 2048
+    max_photo_bytes: int = 10 * 1024 * 1024  # upload size, before processing
+    max_photo_dimension: int = 1600  # longer side of the full version
+    thumbnail_dimension: int = 400  # longer side of the thumbnail
     max_photos_per_place: int = 20
 
     # --- Auth (see docs/AUTH.md)

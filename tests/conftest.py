@@ -8,6 +8,8 @@ from pathlib import Path
 # and a throwaway media dir before anything from `app` is imported. Forced (not setdefault):
 # the test DB gets dropped afterwards, so tests must never reach the remote database.
 # MONGO_URI (the container's address) may still come from the environment, e.g. in CI.
+# Ignore the developer's .env completely: everything the tests need is set right here.
+os.environ["HACKYEAH_ENV_FILE"] = ""
 os.environ["USE_REMOTE_MONGO"] = "false"
 os.environ["MONGO_DB"] = "hackyeah_test"
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp(prefix="hackyeah-media-")
@@ -64,7 +66,7 @@ def _clean_state(request):
     if database is not None:
         for collection in (places.COLLECTION, ratings.COLLECTION, comments.COLLECTION, users.COLLECTION):
             database[collection].delete_many({})  # keep indexes, drop data
-    # Empty the media dir but keep it: the app creates it once at startup.
+    # Empty the media dir but keep it (created once by mkdtemp above).
     for entry in MEDIA_DIR.iterdir():
         if entry.is_dir():
             shutil.rmtree(entry)

@@ -7,7 +7,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
 from app.db import parse_object_id, utcnow
-from app.models.place import Coordinates, MenuItem, Photo, Place, PlaceCreate, PlaceUpdate
+from app.models.place import Coordinates, MenuItem, Photo, PhotoVariant, Place, PlaceCreate, PlaceUpdate
 from app.storage import get_storage
 
 COLLECTION = "places"
@@ -111,17 +111,32 @@ def from_document(doc: dict[str, Any]) -> Place:
 
 
 def photo_from_subdocument(sub: dict[str, Any]) -> Photo:
-    # Only the storage key is persisted; the URL depends on the storage backend / CDN in use.
+    # Only storage keys are persisted; URLs depend on the storage backend / CDN in use.
+    storage = get_storage()
+    thumbnail = sub.get("thumbnail")
     return Photo(
         id=sub["id"],
-        url=get_storage().url(sub["key"]),
+        url=storage.url(sub["key"]),
         content_type=sub["content_type"],
         width=sub["width"],
         height=sub["height"],
         size=sub["size"],
+        thumbnail=PhotoVariant(
+            url=storage.url(thumbnail["key"]),
+            width=thumbnail["width"],
+            height=thumbnail["height"],
+            size=thumbnail["size"],
+        )
+        if thumbnail
+        else None,
         uploaded_by=sub.get("uploaded_by"),
         created_at=sub["created_at"],
     )
+
+
+def photo_storage_keys(sub: dict[str, Any]) -> list[str]:
+    """Every file stored for a photo (full version + thumbnail)."""
+    return [sub["key"]] + ([sub["thumbnail"]["key"]] if sub.get("thumbnail") else [])
 
 
 async def ensure_indexes(db: AsyncDatabase) -> None:
@@ -211,18 +226,33 @@ async def add_photo(db: AsyncDatabase, place_id: str, photo: dict[str, Any], max
     return photo_from_subdocument(photo)
 
 
-async def get_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> Photo | None:
+async def list_photos(db: AsyncDatabase, place_id: str) -> list[Photo] | None:
+    """Photos of a place in upload order, None if the place doesn't exist."""
+    oid = parse_object_id(place_id)
+    if oid is None:
+        return None
+    doc = await db[COLLECTION].find_one({"_id": oid}, projection={"photos": 1})
+    return [photo_from_subdocument(sub) for sub in doc.get("photos", [])] if doc else None
+
+
+async def get_photo_subdocument(db: AsyncDatabase, place_id: str, photo_id: str) -> dict[str, Any] | None:
+    """The raw stored entry (with storage keys), None if the place or photo doesn't exist."""
     oid = parse_object_id(place_id)
     if oid is None:
         return None
     doc = await db[COLLECTION].find_one(
         {"_id": oid, "photos.id": photo_id}, projection={"photos": {"$elemMatch": {"id": photo_id}}}
     )
-    return photo_from_subdocument(doc["photos"][0]) if doc else None
+    return doc["photos"][0] if doc else None
 
 
-async def remove_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> str | None:
-    """Removes the photo entry and returns its storage key, or None if not found."""
+async def get_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> Photo | None:
+    sub = await get_photo_subdocument(db, place_id, photo_id)
+    return photo_from_subdocument(sub) if sub else None
+
+
+async def remove_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> list[str] | None:
+    """Removes the photo entry and returns its storage keys, or None if not found."""
     oid = parse_object_id(place_id)
     if oid is None:
         return None
@@ -231,4 +261,5 @@ async def remove_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> str |
         {"$pull": {"photos": {"id": photo_id}}, "$set": {"updated_at": utcnow()}},
         projection={"photos": {"$elemMatch": {"id": photo_id}}},
     )
-    return doc["photos"][0]["key"] if doc else None
+    return photo_storage_keys(doc["photos"][0]) if doc else None
+

@@ -1,8 +1,6 @@
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from pymongo.errors import ServerSelectionTimeoutError
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -13,7 +11,7 @@ from app.repositories import comments as comments_repo
 from app.repositories import places as places_repo
 from app.repositories import ratings as ratings_repo
 from app.repositories import users as users_repo
-from app.routers import auth, comments, photos, places, ratings
+from app.routers import auth, comments, media, photos, places, ratings
 
 
 @asynccontextmanager
@@ -44,10 +42,7 @@ app.include_router(places.router)
 app.include_router(photos.router)
 app.include_router(ratings.router)
 app.include_router(comments.router)
-# In prod serve this via nginx/Caddy or a CDN, or switch storage to S3 and drop the mount.
-# Created up front: StaticFiles answers 500 instead of 404 while the directory doesn't exist.
-Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
-app.mount(settings.media_base_url, StaticFiles(directory=settings.media_dir), name="media")
+app.include_router(media.router)
 
 
 @app.get("/health")
