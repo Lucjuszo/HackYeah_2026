@@ -1,0 +1,46 @@
+{
+  "name": "Kawiarnia Pod Kodem",
+  "address": {
+    "street": "Floriańska",
+    "house_number": "15",
+    "postcode": "31-019",
+    "city": "Kraków",
+    "country_code": "pl"
+  },
+  "coordinates": { "lat": 50.0633, "lon": 19.9396 },
+  "amenities": {
+    "wifi": true,
+    "power_outlets": true,
+    "computer_access": false,
+    "toilet": true,
+    "wheelchair_accessible": false,
+    "air_conditioning": true,
+    "food": true
+  },
+  "opening_hours": {
+    "always_open": false,
+    "periods": [
+      { "day": 0, "open": "08:00", "close": "20:00" },
+      { "day": 1, "open": "08:00", "close": "20:00" },
+      { "day": 2, "open": "08:00", "close": "20:00" },
+      { "day": 3, "open": "08:00", "close": "20:00" },
+      { "day": 4, "open": "08:00", "close": "24:00" },
+      { "day": 5, "open": "00:00", "close": "02:00" },
+      { "day": 5, "open": "10:00", "close": "24:00" },
+      { "day": 6, "open": "00:00", "close": "02:00" },
+      { "day": 6, "open": "10:00", "close": "18:00" }
+    ]
+  },
+  "usage_price": "0-30",
+  "atmosphere": "quiet",
+  "features": ["Pokoje wygłuszane", "Tablica suchościeralna", "Psy mile widziane"],
+  "menu": [
+    { "category": "Kawa", "name": "Espresso", "price": 900 },
+    { "category": "Kawa", "name": "Flat white", "description": "Podwójne espresso z mlekiem", "price": 1500 },
+    { "category": "Kawa", "name": "Cold brew", "description": "Parzone na zimno przez 18h", "price": 1600 },
+    { "category": "Herbata", "name": "Matcha latte", "price": 1800 },
+    { "category": "Jedzenie", "name": "Croissant z masłem", "price": 1100 },
+    { "category": "Jedzenie", "name": "Bajgiel z łososiem", "description": "Serek, łosoś, kapary", "price": 2600 },
+    { "category": "Desery", "name": "Sernik baskijski", "price": 1900 }
+  ]
+}
