@@ -9,13 +9,16 @@ void main() {
   ) async {
     await tester.pumpWidget(const MiejscowkiApp());
 
-    expect(find.text('Miejscówki'), findsOneWidget);
     expect(find.text('Oceny'), findsOneWidget);
     expect(find.text('Wi-Fi'), findsOneWidget);
     expect(find.text('Sortuj'), findsOneWidget);
     expect(find.text('Ceny'), findsOneWidget);
     expect(find.text('Filtruj'), findsOneWidget);
     expect(find.text('MAPA'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('spot-sheet-handle')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('kafelek Filtruj rozwija podpowiedź', (
@@ -34,6 +37,11 @@ void main() {
   ) async {
     await tester.pumpWidget(const MiejscowkiApp());
 
+    await tester.drag(
+      find.byKey(const ValueKey<String>('spot-sheet-handle')),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
 
@@ -54,5 +62,39 @@ void main() {
 
     expect(find.text('32 miejsca'), findsOneWidget);
     expect(tester.getTopLeft(find.text('32 miejsca')).dy, lessThan(320));
+  });
+
+  testWidgets('rząd kafelków można przewijać poziomo', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MiejscowkiApp());
+
+    final scrollable = find.byType(SingleChildScrollView);
+    expect(scrollable, findsOneWidget);
+
+    await tester.drag(scrollable, const Offset(-260, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ceny'), findsOneWidget);
+    expect(find.text('Filtruj'), findsOneWidget);
+  });
+
+  testWidgets('pasek lokalizacji otwiera ekran z powrotem do homepage', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MiejscowkiApp());
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('location-picker-trigger')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Wybierz lokalizację'), findsOneWidget);
+    expect(find.text('Wpisz miasto lub adres'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('location-back')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('MAPA'), findsOneWidget);
   });
 }

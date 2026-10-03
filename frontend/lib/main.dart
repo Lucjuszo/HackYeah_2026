@@ -34,11 +34,19 @@ class _MapHomePageState extends State<MapHomePage> {
   final _sheetController = DraggableScrollableController();
 
   String _rating = 'Oceny';
-  String _wifi = 'Wi-Fi';
+  bool _isWifiActive = false;
   String _sort = 'Sortuj';
   String _price = 'Ceny';
+  String _location = '+ 0 km';
   bool _filtersOpen = false;
   bool _sheetExpanded = false;
+  final List<String> _filterOrder = <String>[
+    'rating',
+    'wifi',
+    'sort',
+    'price',
+    'filter',
+  ];
   final List<String> _spots = <String>[
     'Miejscówka nad rzeką',
     'Polana pod lasem',
@@ -173,6 +181,25 @@ class _MapHomePageState extends State<MapHomePage> {
     }
   }
 
+  void _setSpotSheetExpanded(bool expanded) {
+    if (!_sheetController.isAttached) return;
+    _sheetController.animateTo(
+      expanded ? 0.94 : 0.10,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _openLocationPicker() async {
+    final selectedLocation = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (BuildContext context) => const LocationPickerPage(),
+      ),
+    );
+    if (!mounted || selectedLocation == null) return;
+    setState(() => _location = selectedLocation);
+  }
+
   Widget _filterChip({
     required IconData icon,
     required String label,
@@ -221,6 +248,74 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
+  Widget _filterForId(String id) {
+    switch (id) {
+      case 'rating':
+        return _filterChip(
+          icon: Icons.star_border_rounded,
+          label: _rating,
+          active: _rating != 'Oceny',
+          onTap: () => _showFilterMenu(
+            title: 'Oceny',
+            options: <String>[
+              'Oceny',
+              '5 gwiazdek',
+              '4+ gwiazdki',
+              '3+ gwiazdki',
+            ],
+            value: _rating,
+            onSelected: (String selected) => setState(() => _rating = selected),
+          ),
+        );
+      case 'wifi':
+        return _filterChip(
+          icon: Icons.wifi_rounded,
+          label: 'Wi-Fi',
+          active: _isWifiActive,
+          onTap: () => setState(() => _isWifiActive = !_isWifiActive),
+        );
+      case 'sort':
+        return _filterChip(
+          icon: Icons.swap_vert_rounded,
+          label: _sort,
+          active: _sort != 'Sortuj',
+          onTap: () => _showFilterMenu(
+            title: 'Sortuj',
+            options: <String>[
+              'Sortuj',
+              'Najbliżej',
+              'Najwyżej oceniane',
+              'Najnowsze',
+            ],
+            value: _sort,
+            onSelected: (String selected) => setState(() => _sort = selected),
+          ),
+        );
+      case 'price':
+        return _filterChip(
+          icon: Icons.payments_outlined,
+          label: _price,
+          active: _price != 'Ceny',
+          onTap: () => _showFilterMenu(
+            title: 'Ceny',
+            options: <String>['Ceny', 'Bezpłatne', 'Do 30 zł', 'Powyżej 30 zł'],
+            value: _price,
+            onSelected: (String selected) => setState(() => _price = selected),
+          ),
+        );
+      case 'filter':
+        return _filterChip(
+          icon: Icons.tune_rounded,
+          label: 'Filtruj',
+          chevron: false,
+          active: _filtersOpen,
+          onTap: () => setState(() => _filtersOpen = !_filtersOpen),
+        );
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
   Widget _header() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(17, 10, 17, 0),
@@ -255,16 +350,43 @@ class _MapHomePageState extends State<MapHomePage> {
             ),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.location_on_outlined, size: 18),
-                const Spacer(),
-                Container(width: 1, height: 24, color: const Color(0xFF858585)),
-                const SizedBox(width: 9),
-                const Text(
-                  '+ 0 km',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                Expanded(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      key: const ValueKey<String>('location-picker-trigger'),
+                      onTap: _openLocationPicker,
+                      borderRadius: BorderRadius.circular(22),
+                      child: Row(
+                        children: <Widget>[
+                          const Icon(Icons.location_on_outlined, size: 18),
+                          const Spacer(),
+                          Container(
+                            width: 1,
+                            height: 24,
+                            color: const Color(0xFF858585),
+                          ),
+                          const SizedBox(width: 9),
+                          Flexible(
+                            child: Text(
+                              _location,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 3),
-                const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
               ],
             ),
           ),
@@ -274,84 +396,7 @@ class _MapHomePageState extends State<MapHomePage> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: <Widget>[
-                  _filterChip(
-                    icon: Icons.star_border_rounded,
-                    label: _rating,
-                    active: _rating != 'Oceny',
-                    onTap: () => _showFilterMenu(
-                      title: 'Oceny',
-                      options: <String>[
-                        'Oceny',
-                        '5 gwiazdek',
-                        '4+ gwiazdki',
-                        '3+ gwiazdki',
-                      ],
-                      value: _rating,
-                      onSelected: (String selected) =>
-                          setState(() => _rating = selected),
-                    ),
-                  ),
-                  _filterChip(
-                    icon: Icons.wifi_rounded,
-                    label: _wifi,
-                    active: _wifi != 'Wi-Fi',
-                    onTap: () => _showFilterMenu(
-                      title: 'Wi-Fi',
-                      options: <String>[
-                        'Wi-Fi',
-                        'Tylko z Wi-Fi',
-                        'Dobre Wi-Fi',
-                      ],
-                      value: _wifi,
-                      onSelected: (String selected) =>
-                          setState(() => _wifi = selected),
-                    ),
-                  ),
-                  _filterChip(
-                    icon: Icons.swap_vert_rounded,
-                    label: _sort,
-                    active: _sort != 'Sortuj',
-                    onTap: () => _showFilterMenu(
-                      title: 'Sortuj',
-                      options: <String>[
-                        'Sortuj',
-                        'Najbliżej',
-                        'Najwyżej oceniane',
-                        'Najnowsze',
-                      ],
-                      value: _sort,
-                      onSelected: (String selected) =>
-                          setState(() => _sort = selected),
-                    ),
-                  ),
-                  _filterChip(
-                    icon: Icons.payments_outlined,
-                    label: _price,
-                    active: _price != 'Ceny',
-                    onTap: () => _showFilterMenu(
-                      title: 'Ceny',
-                      options: <String>[
-                        'Ceny',
-                        'Bezpłatne',
-                        'Do 30 zł',
-                        'Powyżej 30 zł',
-                      ],
-                      value: _price,
-                      onSelected: (String selected) =>
-                          setState(() => _price = selected),
-                    ),
-                  ),
-                  _filterChip(
-                    icon: Icons.tune_rounded,
-                    label: 'Filtruj',
-                    chevron: false,
-                    active: _filtersOpen,
-                    onTap: () => setState(() => _filtersOpen = !_filtersOpen),
-                  ),
-                ],
-              ),
+              child: Row(children: _filterOrder.map(_filterForId).toList()),
             ),
           ),
           AnimatedCrossFade(
@@ -443,11 +488,11 @@ class _MapHomePageState extends State<MapHomePage> {
   Widget _spotSheet() {
     return DraggableScrollableSheet(
       controller: _sheetController,
-      initialChildSize: 0.16,
-      minChildSize: 0.16,
+      initialChildSize: 0.10,
+      minChildSize: 0.10,
       maxChildSize: 0.94,
       snap: true,
-      snapSizes: const <double>[0.16, 0.94],
+      snapSizes: const <double>[0.10, 0.94],
       builder: (BuildContext context, ScrollController scrollController) =>
           NotificationListener<DraggableScrollableNotification>(
             onNotification: (DraggableScrollableNotification notification) {
@@ -478,18 +523,7 @@ class _MapHomePageState extends State<MapHomePage> {
                     controller: scrollController,
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 92),
                     children: <Widget>[
-                      Center(
-                        child: Container(
-                          key: const ValueKey<String>('spot-sheet-handle'),
-                          width: 46,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFB8B8B8),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 11),
+                      const SizedBox(height: 35),
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 0),
                         child: Text(
@@ -520,6 +554,37 @@ class _MapHomePageState extends State<MapHomePage> {
                         ),
                       ),
                     ],
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 44,
+                    child: GestureDetector(
+                      key: const ValueKey<String>('spot-sheet-handle'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _setSpotSheetExpanded(!_sheetExpanded),
+                      onVerticalDragEnd: (DragEndDetails details) {
+                        final velocity = details.primaryVelocity ?? 0;
+                        if (velocity < -80) {
+                          _setSpotSheetExpanded(true);
+                        } else if (velocity > 80) {
+                          _setSpotSheetExpanded(false);
+                        } else {
+                          _setSpotSheetExpanded(!_sheetExpanded);
+                        }
+                      },
+                      child: Center(
+                        child: Container(
+                          width: 46,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFB8B8B8),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                   Positioned(
                     right: 16,
@@ -553,6 +618,150 @@ class _MapHomePageState extends State<MapHomePage> {
           children: <Widget>[
             _header(),
             Expanded(child: Stack(children: <Widget>[_map(), _spotSheet()])),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class LocationPickerPage extends StatefulWidget {
+  const LocationPickerPage({super.key});
+
+  @override
+  State<LocationPickerPage> createState() => _LocationPickerPageState();
+}
+
+class _LocationPickerPageState extends State<LocationPickerPage> {
+  final TextEditingController _locationController = TextEditingController();
+  final List<String> _suggestions = <String>[
+    'Gdańsk, Wrzeszcz',
+    'Gdańsk, Oliwa',
+    'Sopot',
+    'Gdynia',
+  ];
+
+  @override
+  void dispose() {
+    _locationController.dispose();
+    super.dispose();
+  }
+
+  void _selectLocation(String location) {
+    Navigator.of(context).pop(location);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _locationController.text.trim().toLowerCase();
+    final locations = _suggestions
+        .where((String location) => location.toLowerCase().contains(query))
+        .toList();
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          key: const ValueKey<String>('location-back'),
+          tooltip: 'Wróć',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Wybierz lokalizację',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: <Widget>[
+            TextField(
+              controller: _locationController,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: 'Wpisz miasto lub adres',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _locationController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _locationController.clear();
+                          setState(() {});
+                        },
+                      ),
+                filled: true,
+                fillColor: const Color(0xFFE7E7E7),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(22),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Material(
+              color: const Color(0xFFF1F1F1),
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => _selectLocation('Moja lokalizacja'),
+                child: const Padding(
+                  padding: EdgeInsets.all(15),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.my_location_rounded, color: Color(0xFF20252B)),
+                      SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'Użyj mojej lokalizacji',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Znajdź miejscówki w pobliżu',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF777777),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Ostatnio wybrane',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 7),
+            if (locations.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Text(
+                  'Brak pasujących lokalizacji',
+                  style: TextStyle(color: Color(0xFF777777)),
+                ),
+              )
+            else
+              ...locations.map(
+                (String location) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.location_on_outlined),
+                  title: Text(location),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => _selectLocation(location),
+                ),
+              ),
           ],
         ),
       ),
