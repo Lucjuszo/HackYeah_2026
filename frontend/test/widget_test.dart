@@ -97,4 +97,25 @@ void main() {
 
     expect(find.byIcon(Icons.my_location_rounded), findsOneWidget);
   });
+
+  testWidgets('kliknięcie miejscówki otwiera szczegóły i rozwija godziny', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MiejscowkiApp());
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('spot-sheet-handle')),
+      const Offset(0, -500),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Miejscówka nad rzeką'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Godziny otwarcia'), findsOneWidget);
+    await tester.tap(find.text('Godziny otwarcia'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Poniedziałek'), findsOneWidget);
+    expect(find.text('8:00 – 17:00'), findsNWidgets(5));
+  });
 }

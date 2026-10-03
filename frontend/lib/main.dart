@@ -51,7 +51,8 @@ class _MapHomePageState extends State<MapHomePage> {
   bool _isWifiActive = false;
   String _sort = 'Sortuj';
   String _price = 'Ceny';
-  String _location = '+ 0 km';
+  String _location = 'Lokalizacja';
+  String _radius = '+ 0 km';
   bool _filtersOpen = false;
   bool _sheetExpanded = false;
   final List<String> _filterOrder = <String>[
@@ -271,6 +272,7 @@ class _MapHomePageState extends State<MapHomePage> {
         return _filterChip(
           icon: Icons.wifi_rounded,
           label: 'Wi-Fi',
+          chevron: false,
           active: _isWifiActive,
           onTap: () => setState(() => _isWifiActive = !_isWifiActive),
         );
@@ -330,12 +332,13 @@ class _MapHomePageState extends State<MapHomePage> {
             child: TextField(
               controller: _searchController,
               textInputAction: TextInputAction.search,
+              textAlignVertical: TextAlignVertical.center,
               decoration: const InputDecoration(
                 hintText: 'Szukaj miejscówki',
                 hintStyle: TextStyle(color: Color(0xFF7A7A7A), fontSize: 13),
                 prefixIcon: Icon(Icons.search_rounded, size: 19),
                 prefixIconConstraints: BoxConstraints(minWidth: 44),
-                contentPadding: EdgeInsets.symmetric(vertical: 9),
+                contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
               ),
             ),
@@ -343,7 +346,7 @@ class _MapHomePageState extends State<MapHomePage> {
           const SizedBox(height: 10),
           Container(
             height: 36,
-            padding: const EdgeInsets.only(left: 12, right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: const Color(0xFFDADADA),
               borderRadius: BorderRadius.circular(22),
@@ -351,6 +354,7 @@ class _MapHomePageState extends State<MapHomePage> {
             child: Row(
               children: <Widget>[
                 Expanded(
+                  flex: 4,
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
@@ -360,18 +364,57 @@ class _MapHomePageState extends State<MapHomePage> {
                       child: Row(
                         children: <Widget>[
                           const Icon(Icons.location_on_outlined, size: 18),
-                          const Spacer(),
-                          Container(
-                            width: 1,
-                            height: 24,
-                            color: const Color(0xFF858585),
-                          ),
-                          const SizedBox(width: 9),
+                          const SizedBox(width: 8),
                           Flexible(
                             child: Text(
                               _location,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Container(width: 1, height: 24, color: const Color(0xFF858585)),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      key: const ValueKey<String>('radius-picker-trigger'),
+                      onTap: () => _showFilterMenu(
+                        title: 'Promień',
+                        options: <String>[
+                          '+ 0 km',
+                          '+ 1 km',
+                          '+ 5 km',
+                          '+ 10 km',
+                          '+ 25 km',
+                        ],
+                        value: _radius,
+                        onSelected: (String radius) =>
+                            setState(() => _radius = radius),
+                      ),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: <Widget>[
+                          Flexible(
+                            child: Text(
+                              _radius,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF222222),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -551,6 +594,15 @@ class _MapHomePageState extends State<MapHomePage> {
                             child: SpotListTile(
                               name: entry.value,
                               index: entry.key,
+                              onTap: () => Navigator.of(context).push<void>(
+                                MaterialPageRoute<void>(
+                                  builder: (BuildContext context) =>
+                                      SpotDetailsPage(
+                                        name: entry.value,
+                                        index: entry.key,
+                                      ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1078,22 +1130,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
             _textField(
               label: 'Dodatkowe udogodnienia',
               controller: _notesController,
-              hint: 'Napisz coś więcej',
               maxLines: 2,
-            ),
-            _choiceField(
-              label: 'Dodatkowe informacje',
-              value: 'Wybierz udogodnienia',
-              onTap: () => _pickValue(
-                title: 'Dodatkowe informacje',
-                values: <String>[
-                  'Dostęp dla wózków',
-                  'Miejsce dla psa',
-                  'Oświetlenie',
-                ],
-                selected: '',
-                onSelected: (_) {},
-              ),
             ),
             Align(
               alignment: Alignment.centerRight,
@@ -1355,10 +1392,16 @@ class MapMarker extends StatelessWidget {
 }
 
 class SpotListTile extends StatelessWidget {
-  const SpotListTile({required this.name, required this.index, super.key});
+  const SpotListTile({
+    required this.name,
+    required this.index,
+    this.onTap,
+    super.key,
+  });
 
   final String name;
   final int index;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1366,145 +1409,462 @@ class SpotListTile extends StatelessWidget {
     final String reviewCount = index.isEven ? '217' : '47';
     final String place = index.isEven ? 'Gdańsk, Wrzeszcz' : 'Gdańsk, Oliwa';
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFD7D7D7))),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Container(
-            width: 108,
-            height: 108,
-            decoration: BoxDecoration(
-              color: const Color(0xFFD9D9D9),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(
-              Icons.landscape_outlined,
-              size: 30,
-              color: Color(0xFFB5B5B5),
-            ),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFD7D7D7))),
           ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 7, right: 3),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: Color(0xFF111111),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: 108,
+                height: 108,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD9D9D9),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(
+                  Icons.landscape_outlined,
+                  size: 30,
+                  color: Color(0xFFB5B5B5),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 7, right: 3),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      ...List<Widget>.generate(
-                        5,
-                        (int _) => const Icon(
-                          Icons.star_rounded,
-                          size: 12,
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
                           color: Color(0xFF111111),
                         ),
                       ),
-                      const SizedBox(width: 5),
-                      Text(
-                        '($reviewCount)',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF777777),
-                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: <Widget>[
+                          ...List<Widget>.generate(
+                            5,
+                            (int _) => const Icon(
+                              Icons.star_rounded,
+                              size: 12,
+                              color: Color(0xFF111111),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '($reviewCount)',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Color(0xFF777777),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.location_on_outlined,
-                        size: 12,
-                        color: Color(0xFF777777),
-                      ),
-                      const SizedBox(width: 3),
-                      Expanded(
-                        child: Text(
-                          place,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 10,
+                      const SizedBox(height: 3),
+                      Row(
+                        children: <Widget>[
+                          const Icon(
+                            Icons.location_on_outlined,
+                            size: 12,
                             color: Color(0xFF777777),
                           ),
-                        ),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              place,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Color(0xFF777777),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            isOpen ? 'Otwarte teraz' : 'Zamknięte',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: isOpen
+                                  ? const Color(0xFF2C7A45)
+                                  : const Color(0xFFB53131),
+                            ),
+                          ),
+                          const SizedBox(width: 7),
+                          Text(
+                            isOpen ? 'do 20:00' : 'do 9:00',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Color(0xFF777777),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: <Widget>[
+                          const Icon(
+                            Icons.wifi_rounded,
+                            size: 13,
+                            color: Color(0xFF4E4E4E),
+                          ),
+                          const SizedBox(width: 3),
+                          const Text(
+                            'Wi-Fi',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Color(0xFF4E4E4E),
+                            ),
+                          ),
+                          const SizedBox(width: 11),
+                          const Icon(
+                            Icons.power_rounded,
+                            size: 13,
+                            color: Color(0xFF4E4E4E),
+                          ),
+                          const SizedBox(width: 3),
+                          const Text(
+                            'Gniazdka',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Color(0xFF4E4E4E),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: <Widget>[
-                      Text(
-                        isOpen ? 'Otwarte teraz' : 'Zamknięte',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: isOpen
-                              ? const Color(0xFF2C7A45)
-                              : const Color(0xFFB53131),
-                        ),
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        isOpen ? 'do 20:00' : 'do 9:00',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF777777),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.wifi_rounded,
-                        size: 13,
-                        color: Color(0xFF4E4E4E),
-                      ),
-                      const SizedBox(width: 3),
-                      const Text(
-                        'Wi-Fi',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF4E4E4E),
-                        ),
-                      ),
-                      const SizedBox(width: 11),
-                      const Icon(
-                        Icons.power_rounded,
-                        size: 13,
-                        color: Color(0xFF4E4E4E),
-                      ),
-                      const SizedBox(width: 3),
-                      const Text(
-                        'Gniazdka',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF4E4E4E),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SpotDetailsPage extends StatelessWidget {
+  const SpotDetailsPage({required this.name, required this.index, super.key});
+
+  final String name;
+  final int index;
+
+  static const Color pageColor = Color(0xFFFFFCF4);
+  static const Color accentColor = Color(0xFFFF8B55);
+
+  Widget _ratingRow() {
+    return Row(
+      children: <Widget>[
+        ...List<Widget>.generate(
+          5,
+          (int star) => Icon(
+            star == 4 ? Icons.star_border_rounded : Icons.star_rounded,
+            color: accentColor,
+            size: 17,
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Text(
+          '(217)',
+          style: TextStyle(fontSize: 11, color: Color(0xFF777777)),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailLine(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 14, color: const Color(0xFF777777)),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF555555)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _benefit(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.check_rounded, size: 15, color: Color(0xFF62B36A)),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: const TextStyle(fontSize: 11, color: Color(0xFF444444)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _review(String author, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE1DDD4))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const CircleAvatar(
+                radius: 11,
+                backgroundColor: Color(0xFFE9E3D7),
+                child: Icon(Icons.person, size: 13, color: Color(0xFFAAA092)),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  author,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Text(
+                '★★★★☆',
+                style: TextStyle(fontSize: 11, color: accentColor),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            text,
+            style: const TextStyle(fontSize: 10, color: Color(0xFF555555)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool open = index.isEven;
+    final String place = index.isEven ? 'Gdańsk, Wrzeszcz' : 'Gdańsk, Oliwa';
+
+    return Scaffold(
+      backgroundColor: pageColor,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 28),
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                IconButton(
+                  key: const ValueKey<String>('spot-details-back'),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 36,
+                  ),
+                  icon: const Icon(Icons.chevron_left_rounded, size: 23),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const Text(
+                  'Miejscówka',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
+            Stack(
+              children: <Widget>[
+                Container(
+                  height: 205,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD9D9D9),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(
+                    Icons.local_library_outlined,
+                    size: 72,
+                    color: Color(0xFFB4B0A7),
+                  ),
+                ),
+                Positioned(
+                  left: 8,
+                  bottom: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accentColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Gwarno',
+                      style: TextStyle(color: Colors.white, fontSize: 10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 17),
+            Text(
+              name,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            _ratingRow(),
+            const SizedBox(height: 9),
+            _detailLine(Icons.location_on_outlined, place),
+            _detailLine(Icons.payments_outlined, '0–20 zł'),
+            Row(
+              children: <Widget>[
+                Text(
+                  open ? 'Otwarte teraz' : 'Zamknięte',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: open
+                        ? const Color(0xFF2C9A51)
+                        : const Color(0xFFB53131),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  open ? 'do 23:00' : 'do 9:00',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF777777),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            const Divider(color: Color(0xFFE1DDD4), height: 1),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(bottom: 6),
+              title: const Text(
+                'Godziny otwarcia',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              children: const <Widget>[
+                _HoursRow(day: 'Poniedziałek', hours: '8:00 – 17:00'),
+                _HoursRow(day: 'Wtorek', hours: '8:00 – 17:00'),
+                _HoursRow(day: 'Środa', hours: '8:00 – 17:00'),
+                _HoursRow(day: 'Czwartek', hours: '8:00 – 17:00'),
+                _HoursRow(day: 'Piątek', hours: '8:00 – 17:00'),
+                _HoursRow(day: 'Sobota', hours: 'Nieczynne'),
+                _HoursRow(day: 'Niedziela', hours: 'Nieczynne'),
+              ],
+            ),
+            const Divider(color: Color(0xFFE1DDD4), height: 1),
+            const SizedBox(height: 13),
+            const Text(
+              'Udogodnienia',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 9),
+            _benefit('Gastronomia'),
+            _benefit('Dostęp do komputera'),
+            _benefit('Toaleta'),
+            _benefit('Klima'),
+            const SizedBox(height: 10),
+            Row(
+              children: <Widget>[
+                const Icon(
+                  Icons.wifi_rounded,
+                  size: 14,
+                  color: Color(0xFF555555),
+                ),
+                const SizedBox(width: 5),
+                const Text(
+                  'Wi-Fi',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF555555)),
+                ),
+                const SizedBox(width: 14),
+                const Icon(
+                  Icons.power_rounded,
+                  size: 14,
+                  color: Color(0xFF555555),
+                ),
+                const SizedBox(width: 5),
+                const Text(
+                  'Gniazdka',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF555555)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                const Expanded(
+                  child: Text(
+                    'Opinie',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {},
+                  child: const Text(
+                    'Dodaj opinię',
+                    style: TextStyle(fontSize: 10, color: Color(0xFF555555)),
+                  ),
+                ),
+              ],
+            ),
+            _review('Karolina', 'Dobre miejsce do nauki.'),
+            _review('Marcin', 'Spokojnie i wygodnie.'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HoursRow extends StatelessWidget {
+  const _HoursRow({required this.day, required this.hours});
+
+  final String day;
+  final String hours;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              day,
+              style: const TextStyle(fontSize: 10, color: Color(0xFF666666)),
+            ),
+          ),
+          Text(
+            hours,
+            style: const TextStyle(fontSize: 10, color: Color(0xFF666666)),
           ),
         ],
       ),
