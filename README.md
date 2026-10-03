@@ -1,5 +1,12 @@
 # HackYeah_2026
 
+## Authors
+
+- Natalia Płocha
+- Lucjan Butko
+- Krzysztof Toczyński
+- Michał Kopczewski
+
 Backend: FastAPI + MongoDB (pymongo async).
 
 ## Uruchomienie
