@@ -30,7 +30,6 @@ class MapHomePage extends StatefulWidget {
 
 class _MapHomePageState extends State<MapHomePage> {
   final _searchController = TextEditingController();
-  final _newSpotController = TextEditingController();
   final _sheetController = DraggableScrollableController();
 
   String _rating = 'Oceny';
@@ -55,7 +54,6 @@ class _MapHomePageState extends State<MapHomePage> {
   @override
   void dispose() {
     _searchController.dispose();
-    _newSpotController.dispose();
     _sheetController.dispose();
     super.dispose();
   }
@@ -110,68 +108,14 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
-  void _showAddSpotSheet() {
-    _newSpotController.clear();
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      backgroundColor: Colors.white,
-      builder: (BuildContext sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          0,
-          20,
-          MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'Dodaj miejscówkę',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _newSpotController,
-              autofocus: true,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(
-                hintText: 'Nazwa miejscówki',
-                filled: true,
-                fillColor: const Color(0xFFF1F1F1),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onSubmitted: (_) => _addSpot(sheetContext),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => _addSpot(sheetContext),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF20252B),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                ),
-                child: const Text('Dodaj'),
-              ),
-            ),
-          ],
-        ),
+  Future<void> _showAddSpotSheet() async {
+    final name = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (BuildContext context) => const AddPlacePage(),
       ),
     );
-  }
-
-  void _addSpot(BuildContext sheetContext) {
-    final name = _newSpotController.text.trim();
-    if (name.isEmpty) return;
-    setState(() => _spots.insert(0, name));
-    Navigator.of(sheetContext).pop();
+    if (!mounted || name == null || name.trim().isEmpty) return;
+    setState(() => _spots.insert(0, name.trim()));
     if (_sheetController.isAttached) {
       _sheetController.animateTo(
         0.94,
@@ -184,7 +128,7 @@ class _MapHomePageState extends State<MapHomePage> {
   void _setSpotSheetExpanded(bool expanded) {
     if (!_sheetController.isAttached) return;
     _sheetController.animateTo(
-      expanded ? 0.94 : 0.10,
+      expanded ? 0.94 : 0.26,
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOutCubic,
     );
@@ -488,11 +432,11 @@ class _MapHomePageState extends State<MapHomePage> {
   Widget _spotSheet() {
     return DraggableScrollableSheet(
       controller: _sheetController,
-      initialChildSize: 0.10,
-      minChildSize: 0.10,
+      initialChildSize: 0.26,
+      minChildSize: 0.26,
       maxChildSize: 0.94,
       snap: true,
-      snapSizes: const <double>[0.10, 0.94],
+      snapSizes: const <double>[0.26, 0.94],
       builder: (BuildContext context, ScrollController scrollController) =>
           NotificationListener<DraggableScrollableNotification>(
             onNotification: (DraggableScrollableNotification notification) {
@@ -505,7 +449,9 @@ class _MapHomePageState extends State<MapHomePage> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               decoration: BoxDecoration(
-                color: _sheetExpanded ? Colors.white : const Color(0xFFF0F0F0),
+                color: _sheetExpanded
+                    ? const Color(0xFFFFFEFA)
+                    : const Color(0xFFFFFCF5),
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(24),
                 ),
@@ -523,7 +469,7 @@ class _MapHomePageState extends State<MapHomePage> {
                     controller: scrollController,
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 92),
                     children: <Widget>[
-                      const SizedBox(height: 35),
+                      const SizedBox(height: 22),
                       const Padding(
                         padding: EdgeInsets.symmetric(horizontal: 0),
                         child: Text(
@@ -536,23 +482,26 @@ class _MapHomePageState extends State<MapHomePage> {
                         ),
                       ),
                       const SizedBox(height: 7),
-                      const Text(
-                        '32 miejsca',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF777777),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      ..._spots.asMap().entries.map(
-                        (MapEntry<int, String> entry) => Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: SpotListTile(
-                            name: entry.value,
-                            index: entry.key,
+                      if (_sheetExpanded) ...<Widget>[
+                        const Text(
+                          '32 miejsca',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF777777),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 18),
+                        ..._spots.asMap().entries.map(
+                          (MapEntry<int, String> entry) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: SpotListTile(
+                              name: entry.value,
+                              index: entry.key,
+                            ),
+                          ),
+                        ),
+                      ] else
+                        const SizedBox(height: 600),
                     ],
                   ),
                   Positioned(
@@ -579,18 +528,21 @@ class _MapHomePageState extends State<MapHomePage> {
                           width: 46,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFB8B8B8),
+                            color: const Color(0xFFE6DCCB),
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  Positioned(
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
                     right: 16,
-                    bottom: 16,
+                    top: _sheetExpanded ? null : 10,
+                    bottom: _sheetExpanded ? 16 : null,
                     child: Material(
-                      color: const Color(0xFFD9D9D9),
+                      color: const Color(0xFFFFC66F),
                       shape: const CircleBorder(),
                       child: InkWell(
                         customBorder: const CircleBorder(),
@@ -623,6 +575,516 @@ class _MapHomePageState extends State<MapHomePage> {
       ),
     );
   }
+}
+
+class AddPlacePage extends StatefulWidget {
+  const AddPlacePage({super.key});
+
+  @override
+  State<AddPlacePage> createState() => _AddPlacePageState();
+}
+
+class _AddPlacePageState extends State<AddPlacePage> {
+  static const Color _pageColor = Color(0xFFFFFCF4);
+  static const Color _fieldColor = Color(0xFFF5EFDF);
+  static const Color _accentColor = Color(0xFFFF8B55);
+
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
+  final Set<String> _amenities = <String>{};
+
+  String _category = 'Wybierz kategorię';
+  String _hours = 'Całe';
+  String _atmosphere = 'Spokojnie';
+  String _price = '0–20 zł';
+  bool _photoAdded = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _addressController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickValue({
+    required String title,
+    required List<String> values,
+    required String selected,
+    required ValueChanged<String> onSelected,
+  }) async {
+    final value = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (BuildContext context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            ...values.map(
+              (String value) => ListTile(
+                leading: Icon(
+                  value == selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_off_rounded,
+                  color: value == selected
+                      ? _accentColor
+                      : const Color(0xFF999999),
+                ),
+                title: Text(value),
+                onTap: () => Navigator.of(context).pop(value),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (value != null) onSelected(value);
+  }
+
+  Widget _textField({
+    required String label,
+    required TextEditingController controller,
+    String? hint,
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: const TextStyle(fontSize: 9, color: Color(0xFF555555)),
+          ),
+          const SizedBox(height: 4),
+          TextField(
+            controller: controller,
+            maxLines: maxLines,
+            decoration: InputDecoration(
+              hintText: hint,
+              filled: true,
+              fillColor: _fieldColor,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 11,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(9),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _choiceField({
+    required String label,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: const TextStyle(fontSize: 9, color: Color(0xFF555555)),
+          ),
+          const SizedBox(height: 4),
+          Material(
+            color: _fieldColor,
+            borderRadius: BorderRadius.circular(9),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(9),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 11,
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        value,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: value.startsWith('Wybierz')
+                              ? const Color(0xFF969696)
+                              : const Color(0xFF333333),
+                        ),
+                      ),
+                    ),
+                    const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _selectPill({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 5, bottom: 5),
+      child: Material(
+        color: selected ? const Color(0xFFFFB14D) : _fieldColor,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(9),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: selected ? Colors.white : const Color(0xFF555555),
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _amenity(String label) {
+    final selected = _amenities.contains(label);
+    return InkWell(
+      onTap: () => setState(() {
+        if (selected) {
+          _amenities.remove(label);
+        } else {
+          _amenities.add(label);
+        }
+      }),
+      child: SizedBox(
+        width: 148,
+        child: Row(
+          children: <Widget>[
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: selected,
+                activeColor: _accentColor,
+                side: const BorderSide(color: _accentColor),
+                onChanged: (_) => setState(() {
+                  if (selected) {
+                    _amenities.remove(label);
+                  } else {
+                    _amenities.add(label);
+                  }
+                }),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Flexible(child: Text(label, style: const TextStyle(fontSize: 10))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Wpisz nazwę miejscówki')));
+      return;
+    }
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _pageColor,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(12, 5, 12, 22),
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                IconButton(
+                  key: const ValueKey<String>('add-place-back'),
+                  tooltip: 'Wróć',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 36,
+                  ),
+                  icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                const Text(
+                  'Dodaj miejsce',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            GestureDetector(
+              onTap: () => setState(() => _photoAdded = true),
+              child: SizedBox(
+                height: 94,
+                child: CustomPaint(
+                  painter: DashedRoundedBorderPainter(),
+                  child: Center(
+                    child: _photoAdded
+                        ? const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                Icons.check_circle_rounded,
+                                color: _accentColor,
+                                size: 29,
+                              ),
+                              SizedBox(height: 5),
+                              Text(
+                                'Zdjęcie dodane',
+                                style: TextStyle(fontSize: 10),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: _accentColor,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Icon(
+                                  Icons.image_outlined,
+                                  color: Colors.white,
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _accentColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  '+  Dodaj zdjęcia',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            _textField(label: 'Nazwa', controller: _nameController),
+            _textField(label: 'Adres', controller: _addressController),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                height: 150,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    const CustomPaint(painter: MapPainter()),
+                    const Center(
+                      child: Icon(
+                        Icons.location_on_rounded,
+                        color: _accentColor,
+                        size: 31,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            _choiceField(
+              label: 'Kategoria',
+              value: _category,
+              onTap: () => _pickValue(
+                title: 'Kategoria',
+                values: <String>['Park', 'Punkt widokowy', 'Plaża', 'Inne'],
+                selected: _category,
+                onSelected: (String value) => setState(() => _category = value),
+              ),
+            ),
+            _choiceField(
+              label: 'Godziny otwarcia',
+              value: _hours,
+              onTap: () => _pickValue(
+                title: 'Godziny otwarcia',
+                values: <String>[
+                  'Całe',
+                  '6:00–18:00',
+                  '9:00–20:00',
+                  'Całą dobę',
+                ],
+                selected: _hours,
+                onSelected: (String value) => setState(() => _hours = value),
+              ),
+            ),
+            const Text(
+              'Atmosfera',
+              style: TextStyle(fontSize: 9, color: Color(0xFF555555)),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              children: <Widget>[
+                _selectPill(
+                  label: 'Spokojnie',
+                  selected: _atmosphere == 'Spokojnie',
+                  onTap: () => setState(() => _atmosphere = 'Spokojnie'),
+                ),
+                _selectPill(
+                  label: 'Na pogaduchy',
+                  selected: _atmosphere == 'Na pogaduchy',
+                  onTap: () => setState(() => _atmosphere = 'Na pogaduchy'),
+                ),
+                _selectPill(
+                  label: 'Gwarno',
+                  selected: _atmosphere == 'Gwarno',
+                  onTap: () => setState(() => _atmosphere = 'Gwarno'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Cena',
+              style: TextStyle(fontSize: 9, color: Color(0xFF555555)),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              children: <Widget>[
+                for (final price in <String>['0–20 zł', '20–40 zł', '40–60 zł'])
+                  _selectPill(
+                    label: price,
+                    selected: _price == price,
+                    onTap: () => setState(() => _price = price),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            const Text(
+              'Udogodnienia',
+              style: TextStyle(fontSize: 9, color: Color(0xFF555555)),
+            ),
+            const SizedBox(height: 3),
+            Wrap(
+              children: <Widget>[
+                _amenity('Wi-Fi'),
+                _amenity('Toaleta'),
+                _amenity('Gniazdka'),
+                _amenity('Gastronomia'),
+                _amenity('Klima'),
+                _amenity('Dostęp do komputera'),
+              ],
+            ),
+            _textField(
+              label: 'Dodatkowe udogodnienia',
+              controller: _notesController,
+              hint: 'Napisz coś więcej',
+              maxLines: 2,
+            ),
+            _choiceField(
+              label: 'Dodatkowe informacje',
+              value: 'Wybierz udogodnienia',
+              onTap: () => _pickValue(
+                title: 'Dodatkowe informacje',
+                values: <String>[
+                  'Dostęp dla wózków',
+                  'Miejsce dla psa',
+                  'Oświetlenie',
+                ],
+                selected: '',
+                onSelected: (_) {},
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                key: const ValueKey<String>('add-place-submit'),
+                onPressed: _submit,
+                style: FilledButton.styleFrom(
+                  backgroundColor: _accentColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 21,
+                    vertical: 9,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
+                child: const Text('Opublikuj', style: TextStyle(fontSize: 10)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DashedRoundedBorderPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFE6DCCB)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(10)),
+      );
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = (distance + 5).clamp(0, metric.length).toDouble();
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance += 9;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant DashedRoundedBorderPainter oldDelegate) => false;
 }
 
 class LocationPickerPage extends StatefulWidget {

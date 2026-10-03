@@ -45,8 +45,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.add_rounded));
     await tester.pumpAndSettle();
 
-    expect(find.text('Dodaj miejscówkę'), findsOneWidget);
-    expect(find.text('Nazwa miejscówki'), findsOneWidget);
+    expect(find.text('Dodaj miejsce'), findsOneWidget);
+    expect(find.text('Nazwa'), findsOneWidget);
   });
 
   testWidgets('przeciągnięcie uchwytu rozwija listę miejsc', (
