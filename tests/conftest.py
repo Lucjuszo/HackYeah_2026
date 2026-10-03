@@ -15,11 +15,11 @@ from pymongo import MongoClient  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
-from app.repositories.places import COLLECTION  # noqa: E402
+from app.repositories import comments, places, ratings  # noqa: E402
 
-from tests.helpers import MEDIA_DIR  # noqa: E402
+from tests.helpers import EXAMPLES_DIR, MEDIA_DIR  # noqa: E402
 
-EXAMPLE_PLACE = Path(__file__).parent.parent / "examples" / "cafe.json"
+EXAMPLE_PLACE = EXAMPLES_DIR / "places" / "01-kawiarnia-pod-kodem.json"
 
 
 @pytest.fixture(scope="session")
@@ -47,8 +47,14 @@ def _clean_state(request):
     database = request.getfixturevalue("db") if uses_db else None
     yield
     if database is not None:
-        database[COLLECTION].delete_many({})  # keep indexes, drop data
-    shutil.rmtree(MEDIA_DIR, ignore_errors=True)
+        for collection in (places.COLLECTION, ratings.COLLECTION, comments.COLLECTION):
+            database[collection].delete_many({})  # keep indexes, drop data
+    # Empty the media dir but keep it: the app creates it once at startup.
+    for entry in MEDIA_DIR.iterdir():
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
 
 
 @pytest.fixture
@@ -70,4 +76,3 @@ def created_place(client, place_payload) -> dict:
     response = client.post("/places", json=place_payload)
     assert response.status_code == 201, response.text
     return response.json()
-

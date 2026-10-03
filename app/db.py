@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from bson import ObjectId
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -17,3 +18,7 @@ def utcnow() -> datetime:
     """Current UTC time truncated to milliseconds – BSON's precision – so values read back match values written."""
     now = datetime.now(UTC)
     return now.replace(microsecond=now.microsecond // 1000 * 1000)
+
+
+def parse_object_id(value: str) -> ObjectId | None:
+    return ObjectId(value) if ObjectId.is_valid(value) else None

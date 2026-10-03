@@ -1,8 +1,9 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import AfterValidator, BaseModel, Field, StringConstraints
+from annotated_types import MaxLen
+from pydantic import AfterValidator, BaseModel, Field, StringConstraints, model_validator
 
 from app.models.opening_hours import OpeningHours
 from app.models.types import CountryCode, CurrencyCode, NonEmptyStr
@@ -70,6 +71,7 @@ def _dedupe_case_insensitive(items: list[str]) -> list[str]:
 
 
 Feature = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
+Features = Annotated[list[Feature], AfterValidator(_dedupe_case_insensitive), MaxLen(20)]
 
 
 class MenuItem(BaseModel):
@@ -90,11 +92,45 @@ class PlaceCreate(BaseModel):
     # Fee for using the place (not menu prices). Free-form until the price model is settled.
     usage_price: NonEmptyStr | None = Field(None, examples=["0-30", "30-60", "60-90"])
     atmosphere: Atmosphere | None = None
-    features: Annotated[list[Feature], AfterValidator(_dedupe_case_insensitive)] = Field(
-        [], max_length=20, description="User-defined extras shown on the place card, e.g. 'Pokoje wygłuszane'"
-    )
+    features: Features = Field([], description="User-defined extras shown on the place card, e.g. 'Pokoje wygłuszane'")
     menu: list[MenuItem] = []
     osm: OsmRef | None = None
+
+
+class PlaceUpdate(BaseModel):
+    """Partial update (PATCH).
+
+    - omitted field  -> unchanged
+    - explicit null  -> cleared (only for nullable fields: opening_hours, usage_price, atmosphere, osm)
+    - amenities      -> merged flag by flag, so {"amenities": {"wifi": true}} leaves other flags alone
+    - other objects and lists (address, opening_hours, features, menu) are replaced as a whole
+    """
+
+    name: NonEmptyStr | None = None
+    address: Address | None = None
+    coordinates: Coordinates | None = None
+    amenities: Amenities | None = None
+    opening_hours: OpeningHours | None = None
+    usage_price: NonEmptyStr | None = None
+    atmosphere: Atmosphere | None = None
+    features: Features | None = None
+    menu: list[MenuItem] | None = None
+    osm: OsmRef | None = None
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("No fields to update")
+        non_nullable = ("name", "address", "coordinates", "amenities", "features", "menu")
+        nulls = [f for f in non_nullable if f in self.model_fields_set and getattr(self, f) is None]
+        if nulls:
+            raise ValueError(f"Fields cannot be null: {', '.join(nulls)}")
+        return self
+
+
+class RatingSummary(BaseModel):
+    average: float | None = Field(None, description="None until the first rating")
+    count: int = 0
 
 
 class Photo(BaseModel):
@@ -110,5 +146,8 @@ class Photo(BaseModel):
 class Place(PlaceCreate):
     id: str
     photos: list[Photo] = []
+    rating: RatingSummary = RatingSummary()
+    created_by: str | None = None
+    updated_by: str | None = None
     created_at: datetime
     updated_at: datetime

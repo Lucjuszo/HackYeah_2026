@@ -1,0 +1,40 @@
+{
+  "name": "Nocna Stołówka",
+  "address": {
+    "street": "Piastowska",
+    "house_number": "47",
+    "postcode": "30-067",
+    "city": "Kraków",
+    "country_code": "pl"
+  },
+  "coordinates": { "lat": 50.0712, "lon": 19.9055 },
+  "amenities": {
+    "wifi": true,
+    "power_outlets": false,
+    "computer_access": false,
+    "toilet": true,
+    "wheelchair_accessible": false,
+    "air_conditioning": false,
+    "food": true
+  },
+  "opening_hours": {
+    "always_open": false,
+    "periods": [
+      { "day": 3, "open": "18:00", "close": "24:00" },
+      { "day": 4, "open": "00:00", "close": "03:00" },
+      { "day": 4, "open": "18:00", "close": "24:00" },
+      { "day": 5, "open": "00:00", "close": "03:00" },
+      { "day": 5, "open": "18:00", "close": "24:00" },
+      { "day": 6, "open": "00:00", "close": "03:00" }
+    ]
+  },
+  "usage_price": "0-30",
+  "atmosphere": "lively",
+  "features": ["Otwarte w nocy", "Duże stoły dla grup"],
+  "menu": [
+    { "category": "Dania", "name": "Zapiekanka klasyczna", "price": 1600 },
+    { "category": "Dania", "name": "Pierogi ruskie", "description": "8 sztuk, ze skwarkami", "price": 2200 },
+    { "category": "Dania", "name": "Żurek w chlebie", "price": 2400 },
+    { "category": "Napoje", "name": "Herbata z cytryną", "price": 600 }
+  ]
+}

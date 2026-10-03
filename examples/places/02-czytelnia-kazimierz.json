@@ -1,0 +1,34 @@
+{
+  "name": "Czytelnia Kazimierz",
+  "address": {
+    "street": "Józefa",
+    "house_number": "12",
+    "postcode": "31-056",
+    "city": "Kraków",
+    "country_code": "pl"
+  },
+  "coordinates": { "lat": 50.051, "lon": 19.9445 },
+  "amenities": {
+    "wifi": true,
+    "power_outlets": true,
+    "computer_access": true,
+    "toilet": true,
+    "wheelchair_accessible": true,
+    "air_conditioning": false,
+    "food": false
+  },
+  "opening_hours": {
+    "always_open": false,
+    "periods": [
+      { "day": 0, "open": "09:00", "close": "20:00" },
+      { "day": 1, "open": "09:00", "close": "20:00" },
+      { "day": 2, "open": "09:00", "close": "20:00" },
+      { "day": 3, "open": "09:00", "close": "20:00" },
+      { "day": 4, "open": "09:00", "close": "18:00" },
+      { "day": 5, "open": "10:00", "close": "16:00" }
+    ]
+  },
+  "usage_price": "0-30",
+  "atmosphere": "quiet",
+  "features": ["Strefa ciszy", "Drukarka i skaner", "Szafki na rzeczy", "Lampki przy biurkach"]
+}

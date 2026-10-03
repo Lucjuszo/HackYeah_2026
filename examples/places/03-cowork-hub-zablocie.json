@@ -1,0 +1,28 @@
+{
+  "name": "Cowork Hub Zabłocie",
+  "address": {
+    "street": "Zabłocie",
+    "house_number": "20",
+    "postcode": "30-701",
+    "city": "Kraków",
+    "country_code": "pl"
+  },
+  "coordinates": { "lat": 50.048, "lon": 19.962 },
+  "amenities": {
+    "wifi": true,
+    "power_outlets": true,
+    "computer_access": false,
+    "toilet": true,
+    "wheelchair_accessible": true,
+    "air_conditioning": true,
+    "food": false
+  },
+  "opening_hours": { "always_open": true },
+  "usage_price": "30-60",
+  "atmosphere": "chatty",
+  "features": ["Pokoje wygłuszane", "Sala konferencyjna", "Kuchnia z ekspresem", "Monitory do podpięcia"],
+  "menu": [
+    { "category": "Napoje", "name": "Kawa z ekspresu", "description": "W cenie wejściówki", "price": 0 },
+    { "category": "Napoje", "name": "Kombucha", "price": 1400 }
+  ]
+}

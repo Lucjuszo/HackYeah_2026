@@ -1,0 +1,40 @@
+{
+  "name": "Kawiarnia Na Powiślu",
+  "address": {
+    "street": "Dobra",
+    "house_number": "56",
+    "postcode": "00-312",
+    "city": "Warszawa",
+    "country_code": "pl"
+  },
+  "coordinates": { "lat": 52.2405, "lon": 21.0263 },
+  "amenities": {
+    "wifi": true,
+    "power_outlets": true,
+    "computer_access": false,
+    "toilet": true,
+    "wheelchair_accessible": true,
+    "air_conditioning": true,
+    "food": true
+  },
+  "opening_hours": {
+    "always_open": false,
+    "periods": [
+      { "day": 0, "open": "07:30", "close": "21:00" },
+      { "day": 1, "open": "07:30", "close": "21:00" },
+      { "day": 2, "open": "07:30", "close": "21:00" },
+      { "day": 3, "open": "07:30", "close": "21:00" },
+      { "day": 4, "open": "07:30", "close": "21:00" },
+      { "day": 5, "open": "09:00", "close": "21:00" },
+      { "day": 6, "open": "09:00", "close": "19:00" }
+    ]
+  },
+  "usage_price": "0-30",
+  "atmosphere": "chatty",
+  "features": ["Ogródek", "Widok na Wisłę"],
+  "menu": [
+    { "category": "Kawa", "name": "Cappuccino", "price": 1400 },
+    { "category": "Kawa", "name": "Espresso tonic", "price": 1700 },
+    { "category": "Jedzenie", "name": "Tost z awokado", "price": 2900 }
+  ]
+}

@@ -1,21 +1,18 @@
 import uuid
-from typing import Annotated
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
-from pymongo.asynchronous.database import AsyncDatabase
 
 from app.config import settings
-from app.db import get_db, utcnow
+from app.db import utcnow
 from app.images import InvalidImage, process_image
 from app.models.place import Photo
 from app.repositories import places as repo
+from app.routers.deps import Db
 from app.storage import get_storage
 
 router = APIRouter(prefix="/places/{place_id}/photos", tags=["photos"])
-
-Db = Annotated[AsyncDatabase, Depends(get_db)]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

@@ -1,26 +1,25 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pymongo.asynchronous.database import AsyncDatabase
+from fastapi import APIRouter, HTTPException, Query, status
 
-from app.db import get_db
-from app.models.place import Coordinates, Place, PlaceCreate
+from app.auth import CurrentUserId
+from app.models.place import Coordinates, OsmRef, Place, PlaceCreate, PlaceUpdate
 from app.repositories import places as repo
+from app.routers.deps import Db
 
 router = APIRouter(prefix="/places", tags=["places"])
 
-Db = Annotated[AsyncDatabase, Depends(get_db)]
+
+def _osm_conflict(osm: OsmRef) -> HTTPException:
+    return HTTPException(status.HTTP_409_CONFLICT, f"Place linked to OSM {osm.type}/{osm.id} already exists")
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_place(place: PlaceCreate, db: Db) -> Place:
+async def create_place(place: PlaceCreate, db: Db, user_id: CurrentUserId) -> Place:
     try:
-        return await repo.create_place(db, place)
+        return await repo.create_place(db, place, user_id)
     except repo.PlaceAlreadyExists:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"Place linked to OSM {place.osm.type}/{place.osm.id} already exists",
-        )
+        raise _osm_conflict(place.osm)
 
 
 @router.get("")
@@ -44,6 +43,17 @@ async def list_places(
 @router.get("/{place_id}")
 async def get_place(place_id: str, db: Db) -> Place:
     place = await repo.get_place(db, place_id)
+    if place is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Place not found")
+    return place
+
+
+@router.patch("/{place_id}")
+async def update_place(place_id: str, update: PlaceUpdate, db: Db, user_id: CurrentUserId) -> Place:
+    try:
+        place = await repo.update_place(db, place_id, update, user_id)
+    except repo.PlaceAlreadyExists:
+        raise _osm_conflict(update.osm)
     if place is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Place not found")
     return place

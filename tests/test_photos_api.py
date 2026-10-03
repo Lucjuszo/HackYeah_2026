@@ -82,6 +82,10 @@ class TestUpload:
         assert client.post(f"/places/{created_place['id']}/photos").status_code == 422
 
 
+def test_missing_media_file_is_404(client):
+    assert client.get("/media/places/nothing/here.webp").status_code == 404
+
+
 class TestDelete:
     def test_delete(self, client, created_place, db):
         keep = upload(client, created_place["id"]).json()

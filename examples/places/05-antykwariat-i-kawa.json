@@ -1,0 +1,18 @@
+{
+  "name": "Antykwariat i Kawa",
+  "address": {
+    "street": "Mostowa",
+    "house_number": "8",
+    "postcode": "31-061",
+    "city": "Kraków",
+    "country_code": "pl"
+  },
+  "coordinates": { "lat": 50.0497, "lon": 19.9468 },
+  "amenities": { "wifi": true, "food": true },
+  "atmosphere": "quiet",
+  "features": ["Książki do czytania na miejscu"],
+  "menu": [
+    { "category": "Kawa", "name": "Kawa z dripa", "price": 1300 },
+    { "category": "Desery", "name": "Szarlotka", "price": 1500 }
+  ]
+}
