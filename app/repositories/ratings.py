@@ -40,6 +40,7 @@ def _from_document(doc: dict[str, Any]) -> Rating:
         place_id=str(doc["place_id"]),
         user_id=doc["user_id"],
         score=doc["score"],
+        is_mock=doc.get("is_mock", False),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
     )
@@ -81,7 +82,7 @@ async def get_rating(db: AsyncDatabase, place_id: ObjectId, user_id: str) -> Rat
 
 
 async def set_rating(
-    db: AsyncDatabase, place_id: ObjectId, user_id: str, score: int
+    db: AsyncDatabase, place_id: ObjectId, user_id: str, score: int, *, is_mock: bool = False
 ) -> tuple[Rating, RatingSummary]:
     """Creates or replaces the user's rating of the place (one rating per user per place)."""
     now = utcnow()
@@ -89,7 +90,7 @@ async def set_rating(
         try:
             previous = await db[COLLECTION].find_one_and_update(
                 {"place_id": place_id, "user_id": user_id},
-                {"$set": {"score": score, "updated_at": now}, "$setOnInsert": {"created_at": now}},
+                {"$set": {"score": score, "updated_at": now}, "$setOnInsert": {"created_at": now, "is_mock": is_mock}},
                 upsert=True,
                 return_document=ReturnDocument.BEFORE,
             )
@@ -107,7 +108,15 @@ async def set_rating(
         summary = await get_summary(db, place_id)
 
     created_at = previous["created_at"] if previous else now
-    rating = Rating(place_id=str(place_id), user_id=user_id, score=score, created_at=created_at, updated_at=now)
+    stored_is_mock = previous.get("is_mock", False) if previous else is_mock
+    rating = Rating(
+        place_id=str(place_id),
+        user_id=user_id,
+        score=score,
+        is_mock=stored_is_mock,
+        created_at=created_at,
+        updated_at=now,
+    )
     return rating, summary
 
 

@@ -28,7 +28,7 @@ def _menu(menu: list[MenuItem]) -> list[dict[str, Any]]:
     return [item.model_dump(exclude_none=True) for item in menu]
 
 
-def to_document(place: PlaceCreate, user_id: str) -> dict[str, Any]:
+def to_document(place: PlaceCreate, user_id: str, *, is_mock: bool = False) -> dict[str, Any]:
     now = utcnow()
     doc: dict[str, Any] = {
         **place.model_dump(mode="json", include=_PLAIN_FIELDS),
@@ -37,6 +37,7 @@ def to_document(place: PlaceCreate, user_id: str) -> dict[str, Any]:
         "menu": _menu(place.menu),
         "photos": [],
         "rating": {"average": None, "count": 0},
+        "is_mock": is_mock,
         "created_by": user_id,
         "updated_by": user_id,
         "created_at": now,
@@ -93,6 +94,7 @@ def from_document(doc: dict[str, Any]) -> Place:
         osm=doc.get("osm"),
         photos=[photo_from_subdocument(p) for p in doc.get("photos", [])],
         rating=doc.get("rating", {}),
+        is_mock=doc.get("is_mock", False),
         created_by=doc.get("created_by"),
         updated_by=doc.get("updated_by"),
         created_at=doc["created_at"],
@@ -127,8 +129,8 @@ async def place_exists(db: AsyncDatabase, place_id: ObjectId) -> bool:
     return await db[COLLECTION].count_documents({"_id": place_id}, limit=1) > 0
 
 
-async def create_place(db: AsyncDatabase, place: PlaceCreate, user_id: str) -> Place:
-    doc = to_document(place, user_id)
+async def create_place(db: AsyncDatabase, place: PlaceCreate, user_id: str, *, is_mock: bool = False) -> Place:
+    doc = to_document(place, user_id, is_mock=is_mock)
     try:
         result = await db[COLLECTION].insert_one(doc)
     except DuplicateKeyError as e:

@@ -13,6 +13,7 @@ class Rating(BaseModel):
     place_id: str
     user_id: str
     score: int
+    is_mock: bool = Field(False, description="Demo/test data loaded by scripts/seed.py")
     created_at: datetime
     updated_at: datetime
 

@@ -147,6 +147,7 @@ class Place(PlaceCreate):
     id: str
     photos: list[Photo] = []
     rating: RatingSummary = RatingSummary()
+    is_mock: bool = Field(False, description="Demo/test data loaded by scripts/seed.py")
     created_by: str | None = None
     updated_by: str | None = None
     created_at: datetime

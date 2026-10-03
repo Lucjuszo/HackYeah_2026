@@ -27,12 +27,15 @@ def _from_document(doc: dict[str, Any]) -> Comment:
         place_id=str(doc["place_id"]),
         user_id=doc["user_id"],
         text=doc["text"],
+        is_mock=doc.get("is_mock", False),
         created_at=doc["created_at"],
     )
 
 
-async def create_comment(db: AsyncDatabase, place_id: ObjectId, user_id: str, text: str) -> Comment:
-    doc = {"place_id": place_id, "user_id": user_id, "text": text, "created_at": utcnow()}
+async def create_comment(
+    db: AsyncDatabase, place_id: ObjectId, user_id: str, text: str, *, is_mock: bool = False
+) -> Comment:
+    doc = {"place_id": place_id, "user_id": user_id, "text": text, "is_mock": is_mock, "created_at": utcnow()}
     result = await db[COLLECTION].insert_one(doc)
     doc["_id"] = result.inserted_id
     return _from_document(doc)

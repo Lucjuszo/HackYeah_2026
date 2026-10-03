@@ -3,8 +3,7 @@
 Wszystkie przykłady zakładają API na `http://localhost:8000`. Uruchomienie:
 
 ```bash
-docker compose up -d
-fastapi dev app/main.py
+fastapi dev app/main.py    # baza z .env: domyślnie zdalna (Atlas); USE_REMOTE_MONGO=false + docker compose up -d dla lokalnej
 ```
 
 Interaktywna dokumentacja (Swagger): http://localhost:8000/docs
@@ -17,11 +16,12 @@ Interaktywna dokumentacja (Swagger): http://localhost:8000/docs
 
 ## Dane testowe
 
-Skrypt wrzuca wszystkie miejsca z `examples/places/` razem z ocenami i komentarzami
-od kilku użytkowników (`anna`, `bartek`, `celina`, `dawid`, `ewa`):
+Skrypt wrzuca bezpośrednio do bazy wszystkie miejsca z `examples/places/` razem z ocenami
+i komentarzami od kilku użytkowników (`anna`, `bartek`, `celina`, `dawid`, `ewa`).
+Wszystko dostaje `is_mock: true`; ponowne uruchomienie podmienia dane mock, prawdziwych nie rusza.
 
 ```bash
-python scripts/seed.py                       # albo: --url http://inny-host:8000
+python scripts/seed.py                       # baza wybrana w .env
 ```
 
 | Plik | Co pokazuje |

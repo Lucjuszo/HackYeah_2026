@@ -4,9 +4,12 @@ import shutil
 import tempfile
 from pathlib import Path
 
-# Settings are read at import time, so point the app at a test DB and a throwaway media dir
-# before anything from `app` is imported. Real env vars (e.g. MONGO_URI in CI) still win.
-os.environ.setdefault("MONGO_DB", "hackyeah_test")
+# Settings are read at import time, so point the app at the docker compose container, a test DB
+# and a throwaway media dir before anything from `app` is imported. Forced (not setdefault):
+# the test DB gets dropped afterwards, so tests must never reach the remote database.
+# MONGO_URI (the container's address) may still come from the environment, e.g. in CI.
+os.environ["USE_REMOTE_MONGO"] = "false"
+os.environ["MONGO_DB"] = "hackyeah_test"
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp(prefix="hackyeah-media-")
 
 import pytest  # noqa: E402
@@ -34,6 +37,7 @@ def client():
 @pytest.fixture(scope="session")
 def db():
     """Sync client for setting up and asserting on raw DB state, independent of the app's event loop."""
+    assert not settings.use_remote_mongo, "tests would drop a database on the remote MongoDB"
     mongo = MongoClient(settings.mongo_uri, tz_aware=True)
     yield mongo[settings.mongo_db]
     mongo.drop_database(settings.mongo_db)

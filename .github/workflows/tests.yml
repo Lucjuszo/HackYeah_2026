@@ -24,8 +24,9 @@ jobs:
           --health-retries 12
 
     env:
+      # Tests always use the service container (tests/conftest.py forces this too).
+      USE_REMOTE_MONGO: "false"
       MONGO_URI: mongodb://root:example@localhost:27017
-      MONGO_DB: hackyeah_test
 
     steps:
       - uses: actions/checkout@v5

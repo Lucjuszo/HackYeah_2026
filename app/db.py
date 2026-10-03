@@ -4,10 +4,16 @@ from bson import ObjectId
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
-from app.config import settings
+from app.config import Settings, settings
 
-# tz_aware: return UTC-aware datetimes instead of naive ones, matching what we write.
-client: AsyncMongoClient = AsyncMongoClient(settings.mongo_uri, tz_aware=True)
+
+def create_client(config: Settings = settings) -> AsyncMongoClient:
+    uri, kwargs = config.mongo_connection()
+    # tz_aware: return UTC-aware datetimes instead of naive ones, matching what we write.
+    return AsyncMongoClient(uri, tz_aware=True, **kwargs)
+
+
+client: AsyncMongoClient = create_client()
 
 
 def get_db() -> AsyncDatabase:
