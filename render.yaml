@@ -34,6 +34,19 @@ services:
         generateValue: true
       - key: AUTH_DEV_LOGIN
         value: "false"
+      # Logowanie OAuth – wpisz w Dashboardzie. Callbacki u dostawców:
+      # https://focusmap-api.onrender.com/auth/google/callback
+      # https://focusmap-api.onrender.com/auth/github/callback
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
 
   # Frontend: Flutter web, działa w przeglądarce telefonu i komputera
   - type: web

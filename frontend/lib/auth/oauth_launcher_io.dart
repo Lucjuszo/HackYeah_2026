@@ -25,7 +25,7 @@ class _LoopbackLauncher implements OAuthLauncher {
       } else if (request.uri.path == '/done') {
         try {
           final result = parseLoginParams(request.uri.queryParameters);
-          response.write(_page('Zalogowano', '<p>Zalogowano. Możesz wrócić do aplikacji Miejscówki.</p>'));
+          response.write(_page('Zalogowano', '<p>Zalogowano. Możesz wrócić do aplikacji Focus Map.</p>'));
           if (!completer.isCompleted) completer.complete(result);
         } on LoginException catch (e) {
           response.write(_page('Błąd logowania', '<p>${e.message}</p>'));
