@@ -7,14 +7,14 @@ void main() {
   testWidgets('mapa pokazuje wyszukiwarkę i wszystkie filtry', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MiejscowkiApp());
+    await tester.pumpWidget(const MiejscowkiApp(locateOnStart: false));
 
     expect(find.text('Oceny'), findsOneWidget);
     expect(find.text('Wi-Fi'), findsOneWidget);
     expect(find.text('Sortuj'), findsOneWidget);
     expect(find.text('Ceny'), findsOneWidget);
     expect(find.text('Filtruj'), findsOneWidget);
-    expect(find.text('MAPA'), findsOneWidget);
+    expect(find.byIcon(Icons.my_location_rounded), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('spot-sheet-handle')),
       findsOneWidget,
@@ -24,7 +24,7 @@ void main() {
   testWidgets('kafelek Filtruj rozwija podpowiedź', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MiejscowkiApp());
+    await tester.pumpWidget(const MiejscowkiApp(locateOnStart: false));
 
     await tester.tap(find.text('Filtruj'));
     await tester.pumpAndSettle();
@@ -35,7 +35,7 @@ void main() {
   testWidgets('plus otwiera formularz nowej miejscówki', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MiejscowkiApp());
+    await tester.pumpWidget(const MiejscowkiApp(locateOnStart: false));
 
     await tester.drag(
       find.byKey(const ValueKey<String>('spot-sheet-handle')),
@@ -52,7 +52,7 @@ void main() {
   testWidgets('przeciągnięcie uchwytu rozwija listę miejsc', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MiejscowkiApp());
+    await tester.pumpWidget(const MiejscowkiApp(locateOnStart: false));
 
     await tester.drag(
       find.byKey(const ValueKey<String>('spot-sheet-handle')),
@@ -67,7 +67,7 @@ void main() {
   testWidgets('rząd kafelków można przewijać poziomo', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MiejscowkiApp());
+    await tester.pumpWidget(const MiejscowkiApp(locateOnStart: false));
 
     final scrollable = find.byType(SingleChildScrollView);
     expect(scrollable, findsOneWidget);
@@ -82,7 +82,7 @@ void main() {
   testWidgets('pasek lokalizacji otwiera ekran z powrotem do homepage', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MiejscowkiApp());
+    await tester.pumpWidget(const MiejscowkiApp(locateOnStart: false));
 
     await tester.tap(
       find.byKey(const ValueKey<String>('location-picker-trigger')),
@@ -95,7 +95,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('location-back')));
     await tester.pumpAndSettle();
 
-    expect(find.text('MAPA'), findsOneWidget);
+    expect(find.byIcon(Icons.my_location_rounded), findsOneWidget);
   });
 
   testWidgets('kliknięcie miejscówki otwiera szczegóły i rozwija godziny', (

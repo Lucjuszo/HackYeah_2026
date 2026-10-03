@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart' show LatLng;
 
 void main() => runApp(const MiejscowkiApp());
 
 class MiejscowkiApp extends StatelessWidget {
-  const MiejscowkiApp({super.key});
+  const MiejscowkiApp({this.locateOnStart = true, super.key});
+
+  final bool locateOnStart;
 
   @override
   Widget build(BuildContext context) {
@@ -16,13 +21,15 @@ class MiejscowkiApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white,
         fontFamily: 'Arial',
       ),
-      home: const MapHomePage(),
+      home: MapHomePage(locateOnStart: locateOnStart),
     );
   }
 }
 
 class MapHomePage extends StatefulWidget {
-  const MapHomePage({super.key});
+  const MapHomePage({this.locateOnStart = true, super.key});
+
+  final bool locateOnStart;
 
   @override
   State<MapHomePage> createState() => _MapHomePageState();
@@ -31,6 +38,14 @@ class MapHomePage extends StatefulWidget {
 class _MapHomePageState extends State<MapHomePage> {
   final _searchController = TextEditingController();
   final _sheetController = DraggableScrollableController();
+  final _mapController = MapController();
+
+  // Gdańsk – widok startowy, zanim przyjdzie lokalizacja urządzenia.
+  static const _defaultCenter = LatLng(54.3520, 18.6466);
+  static const _userZoom = 15.0;
+
+  LatLng? _userLocation;
+  bool _locating = false;
 
   String _rating = 'Oceny';
   bool _isWifiActive = false;
@@ -53,10 +68,51 @@ class _MapHomePageState extends State<MapHomePage> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.locateOnStart) _locateUser();
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     _sheetController.dispose();
+    _mapController.dispose();
     super.dispose();
+  }
+
+  Future<Position> _currentPosition() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      throw Exception('Usługi lokalizacji są wyłączone');
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      throw Exception('Brak uprawnień do lokalizacji');
+    }
+    return Geolocator.getCurrentPosition();
+  }
+
+  Future<void> _locateUser() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    try {
+      final position = await _currentPosition();
+      if (!mounted) return;
+      final location = LatLng(position.latitude, position.longitude);
+      setState(() => _userLocation = location);
+      _mapController.move(location, _userZoom);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Nie udało się pobrać lokalizacji: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
   }
 
   void _showFilterMenu({
@@ -418,33 +474,29 @@ class _MapHomePageState extends State<MapHomePage> {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        const CustomPaint(painter: MapPainter()),
-        const Positioned(
-          left: 42,
-          top: 112,
-          child: MapMarker(label: '4.8', color: Color(0xFF232A31)),
-        ),
-        const Positioned(
-          right: 52,
-          top: 245,
-          child: MapMarker(label: '4.5', color: Color(0xFF385B4C)),
-        ),
-        const Positioned(
-          left: 76,
-          bottom: 138,
-          child: MapMarker(label: '3.9', color: Color(0xFF765843)),
-        ),
-        Center(
-          child: IgnorePointer(
-            child: Text(
-              'MAPA',
-              style: TextStyle(
-                fontSize: 42,
-                letterSpacing: 1.5,
-                color: Color(0xFF111111),
-              ),
-            ),
+        FlutterMap(
+          mapController: _mapController,
+          options: const MapOptions(
+            initialCenter: _defaultCenter,
+            initialZoom: 13,
           ),
+          children: <Widget>[
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.hackyeah.miejscowki_map',
+            ),
+            if (_userLocation != null)
+              MarkerLayer(
+                markers: <Marker>[
+                  Marker(
+                    point: _userLocation!,
+                    width: 22,
+                    height: 22,
+                    child: const UserLocationDot(),
+                  ),
+                ],
+              ),
+          ],
         ),
         Positioned(
           right: 16,
@@ -455,14 +507,16 @@ class _MapHomePageState extends State<MapHomePage> {
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Centrowanie na Twojej lokalizacji'),
-                ),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.all(13),
-                child: Icon(Icons.my_location_rounded, size: 20),
+              onTap: _locateUser,
+              child: Padding(
+                padding: const EdgeInsets.all(13),
+                child: _locating
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.my_location_rounded, size: 20),
               ),
             ),
           ),
@@ -615,14 +669,19 @@ class _MapHomePageState extends State<MapHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: <Widget>[
-            _header(),
-            Expanded(child: Stack(children: <Widget>[_map(), _spotSheet()])),
-          ],
-        ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          // mapa na cały ekran, także pod paskiem stanu
+          _map(),
+          // wyszukiwarka, filtry i lista miejsc leżą na mapie
+          Column(
+            children: <Widget>[
+              SafeArea(bottom: false, child: _header()),
+              Expanded(child: _spotSheet()),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1262,6 +1321,28 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class UserLocationDot extends StatelessWidget {
+  const UserLocationDot({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A73E8),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x40000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
     );
   }
