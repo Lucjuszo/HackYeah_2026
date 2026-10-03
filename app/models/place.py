@@ -140,6 +140,7 @@ class Photo(BaseModel):
     width: int
     height: int
     size: int
+    uploaded_by: str | None = None
     created_at: datetime
 
 

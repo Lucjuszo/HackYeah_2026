@@ -1,12 +1,13 @@
 from typing import Any
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     # extra="ignore": unrelated keys in .env must not crash the app.
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # env_ignore_empty: "JWT_SECRET=" in .env means "not set", not an empty secret.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
 
     # Remote MongoDB (e.g. Atlas) is the default. USE_REMOTE_MONGO=false switches to the
     # docker compose container below; tests always force the container.
@@ -26,6 +27,33 @@ class Settings(BaseSettings):
     max_photo_bytes: int = 10 * 1024 * 1024
     max_photo_dimension: int = 2048
     max_photos_per_place: int = 20
+
+    # --- Auth (see docs/AUTH.md)
+    # Signs our own access tokens. Without it a random per-process secret is used,
+    # so tokens stop working after every restart – set it in .env.
+    jwt_secret: SecretStr | None = None
+    jwt_ttl_minutes: int = 24 * 60
+    github_client_id: str | None = None
+    github_client_secret: SecretStr | None = None
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    # Where the OAuth callback sends the browser, with "#access_token=..." appended (the frontend).
+    # Unset: the callback answers with JSON, handy for testing without a frontend.
+    auth_redirect_url: str | None = None
+    # Comma-separated e-mails that get the admin role when they log in with a verified address.
+    admin_emails: str = ""
+    # POST /auth/dev-login hands out tokens for any user/role without OAuth. Never enable in production.
+    auth_dev_login: bool = False
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _strong_secret(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and len(value.get_secret_value()) < 32:
+            raise ValueError("JWT_SECRET must be at least 32 characters")
+        return value
+
+    def admin_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
 
     def mongo_connection(self) -> tuple[str, dict[str, Any]]:
         """URI and extra MongoClient kwargs for the selected database."""

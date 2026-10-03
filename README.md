@@ -23,17 +23,30 @@ docker compose up -d                      # MongoDB na localhost:27017 (root / e
 USE_REMOTE_MONGO=false
 ```
 
+### Logowanie
+
+GitHub i Google przez OAuth; backend wystawia własny token (`Authorization: Bearer ...`).
+Odczyt publiczny, zapis wymaga logowania; komentarze edytuje/usuwa autor albo admin.
+Konfiguracja i testowanie bez frontu: [`docs/AUTH.md`](docs/AUTH.md).
+
 ### Dane testowe
 
 ```bash
-python scripts/seed.py                    # do bazy wybranej w .env
+python scripts/import_osm.py              # 30 prawdziwych kawiarni i restauracji z Krakowa (OSM) + dane mock
+python scripts/seed.py                    # albo 6 wymyślonych miejsc z examples/places/
 ```
 
-Wrzuca przykładowe miejsca z `examples/places/` z ocenami i komentarzami, wszystko z `is_mock: true`.
-Można go uruchamiać wielokrotnie: najpierw usuwa poprzednie dane mock, prawdziwych nie rusza.
+Oba piszą do bazy wybranej w `.env` i oznaczają wszystko `is_mock: true`; przed startem usuwają
+**wszystkie** poprzednie dane mock (prawdziwych nie ruszają). Przy imporcie z OSM nazwa, adres,
+współrzędne, godziny i tagi OSM są prawdziwe, a `mock_fields` wymienia pola wymyślone.
+Dane OSM są w repo jako snapshot (`data/osm/`, © OpenStreetMap contributors, ODbL);
+`--refresh` pobiera świeże z Overpass API.
 Usunięcie danych mock w Compass: filtr `{ "is_mock": true }` w kolekcjach `places`, `ratings`, `comments`.
 
-Przykłady zapytań (curl): [`examples/README.md`](examples/README.md).
+### Przykłady
+
+- curl: [`examples/README.md`](examples/README.md)
+- Postman: [`postman/README.md`](postman/README.md)
 
 ## Testy
 

@@ -1,10 +1,12 @@
 from typing import Any
 
 from bson import ObjectId
+from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 
 from app.db import parse_object_id, utcnow
 from app.models.comment import Comment
+from app.models.user import AuthUser
 
 COLLECTION = "comments"
 
@@ -13,7 +15,7 @@ class CommentNotFound(Exception):
     pass
 
 
-class NotCommentAuthor(Exception):
+class NotAllowed(Exception):
     pass
 
 
@@ -26,16 +28,32 @@ def _from_document(doc: dict[str, Any]) -> Comment:
         id=str(doc["_id"]),
         place_id=str(doc["place_id"]),
         user_id=doc["user_id"],
+        user_name=doc.get("user_name"),
         text=doc["text"],
         is_mock=doc.get("is_mock", False),
         created_at=doc["created_at"],
+        edited_at=doc.get("edited_at"),
+        edited_by=doc.get("edited_by"),
     )
 
 
 async def create_comment(
-    db: AsyncDatabase, place_id: ObjectId, user_id: str, text: str, *, is_mock: bool = False
+    db: AsyncDatabase,
+    place_id: ObjectId,
+    user_id: str,
+    text: str,
+    *,
+    user_name: str | None = None,
+    is_mock: bool = False,
 ) -> Comment:
-    doc = {"place_id": place_id, "user_id": user_id, "text": text, "is_mock": is_mock, "created_at": utcnow()}
+    doc = {
+        "place_id": place_id,
+        "user_id": user_id,
+        "user_name": user_name,
+        "text": text,
+        "is_mock": is_mock,
+        "created_at": utcnow(),
+    }
     result = await db[COLLECTION].insert_one(doc)
     doc["_id"] = result.inserted_id
     return _from_document(doc)
@@ -47,11 +65,31 @@ async def list_comments(db: AsyncDatabase, place_id: ObjectId, *, limit: int, sk
     return [_from_document(doc) async for doc in cursor]
 
 
-async def delete_comment(db: AsyncDatabase, place_id: ObjectId, comment_id: str, user_id: str) -> None:
+async def _modifiable(db: AsyncDatabase, place_id: ObjectId, comment_id: str, actor: AuthUser) -> dict[str, Any]:
+    """The comment's filter, if it exists and the actor is its author or an admin."""
     oid = parse_object_id(comment_id)
     doc = await db[COLLECTION].find_one({"_id": oid, "place_id": place_id}) if oid else None
     if doc is None:
         raise CommentNotFound
-    if doc["user_id"] != user_id:
-        raise NotCommentAuthor
-    await db[COLLECTION].delete_one({"_id": oid, "user_id": user_id})
+    if not (actor.is_admin or doc["user_id"] == actor.id):
+        raise NotAllowed
+    return {"_id": oid, "place_id": place_id}
+
+
+async def update_comment(
+    db: AsyncDatabase, place_id: ObjectId, comment_id: str, text: str, actor: AuthUser
+) -> Comment:
+    query = await _modifiable(db, place_id, comment_id, actor)
+    doc = await db[COLLECTION].find_one_and_update(
+        query,
+        {"$set": {"text": text, "edited_at": utcnow(), "edited_by": actor.id}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if doc is None:  # deleted in the meantime
+        raise CommentNotFound
+    return _from_document(doc)
+
+
+async def delete_comment(db: AsyncDatabase, place_id: ObjectId, comment_id: str, actor: AuthUser) -> None:
+    query = await _modifiable(db, place_id, comment_id, actor)
+    await db[COLLECTION].delete_one(query)

@@ -22,7 +22,12 @@ CUISINES_PL = {
     "burger": "burgery",
     "cake": "ciasta",
     "chinese": "chińska",
+    "chicken": "kurczak",
     "coffee_shop": None,  # says nothing beyond "cafe"
+    "crepe": "naleśniki",
+    "dessert": "desery",
+    "donut": "pączki",
+    "fish": "ryby",
     "french": "francuska",
     "georgian": "gruzińska",
     "greek": "grecka",
@@ -40,9 +45,12 @@ CUISINES_PL = {
     "pierogi": "pierogi",
     "pizza": "pizza",
     "polish": "polska",
+    "pasta": "makarony",
     "ramen": "ramen",
     "regional": "regionalna",
+    "sandwich": "kanapki",
     "seafood": "owoce morza",
+    "soup": "zupy",
     "steak_house": "steki",
     "sushi": "sushi",
     "thai": "tajska",
@@ -108,7 +116,8 @@ def _toilet(tags: dict[str, str]) -> bool | None:
 def _amenities(kind: str, tags: dict[str, str]) -> dict[str, bool]:
     internet = (tags.get("internet_access") or "").lower()
     candidates = {
-        "wifi": True if internet in ("wlan", "wifi", "yes") else _flag(internet or None),
+        # "customers" is a common misuse of internet_access:fee, but still means there is wifi.
+        "wifi": True if internet in ("wlan", "wifi", "yes", "customers") else _flag(internet or None),
         "computer_access": True if internet == "terminal" else None,
         "power_outlets": _flag(tags.get("power_supply")),
         "toilet": _toilet(tags),

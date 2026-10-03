@@ -119,6 +119,7 @@ def photo_from_subdocument(sub: dict[str, Any]) -> Photo:
         width=sub["width"],
         height=sub["height"],
         size=sub["size"],
+        uploaded_by=sub.get("uploaded_by"),
         created_at=sub["created_at"],
     )
 
@@ -208,6 +209,16 @@ async def add_photo(db: AsyncDatabase, place_id: str, photo: dict[str, Any], max
             raise PhotoLimitReached
         return None
     return photo_from_subdocument(photo)
+
+
+async def get_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> Photo | None:
+    oid = parse_object_id(place_id)
+    if oid is None:
+        return None
+    doc = await db[COLLECTION].find_one(
+        {"_id": oid, "photos.id": photo_id}, projection={"photos": {"$elemMatch": {"id": photo_id}}}
+    )
+    return photo_from_subdocument(doc["photos"][0]) if doc else None
 
 
 async def remove_photo(db: AsyncDatabase, place_id: str, photo_id: str) -> str | None:

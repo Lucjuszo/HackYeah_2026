@@ -1,8 +1,7 @@
 import pytest
 from bson import ObjectId
 
-from app.auth import MOCK_USER_ID
-from tests.helpers import as_user
+from tests.helpers import ANONYMOUS, DEFAULT_USER, as_user
 
 
 def patch(client, place_id, body, user="editor"):
@@ -11,7 +10,7 @@ def patch(client, place_id, body, user="editor"):
 
 def test_create_records_author(client, minimal_payload):
     default = client.post("/places", json=minimal_payload).json()
-    assert default["created_by"] == default["updated_by"] == MOCK_USER_ID
+    assert default["created_by"] == default["updated_by"] == DEFAULT_USER
 
     explicit = client.post("/places", json=minimal_payload, headers=as_user("anna")).json()
     assert explicit["created_by"] == "anna"
@@ -31,7 +30,7 @@ def test_updates_only_given_fields(client, created_place):
 def test_records_editor_and_time(client, created_place):
     updated = patch(client, created_place["id"], {"name": "X"}, user="bartek").json()
     assert updated["updated_by"] == "bartek"
-    assert updated["created_by"] == MOCK_USER_ID
+    assert updated["created_by"] == DEFAULT_USER
     assert updated["updated_at"] >= created_place["updated_at"]
 
 
@@ -120,6 +119,13 @@ def test_not_found(client):
     assert patch(client, "not-an-id", {"name": "X"}).status_code == 404
 
 
-@pytest.mark.parametrize("header", ["", "a" * 65, "two words", "x/y"])
-def test_invalid_user_header(client, created_place, header):
-    assert patch(client, created_place["id"], {"name": "X"}, user=header).status_code == 422
+def test_requires_login(client, created_place):
+    response = client.patch(f"/places/{created_place['id']}", json={"name": "X"}, headers=ANONYMOUS)
+    assert response.status_code == 401
+    assert client.get(f"/places/{created_place['id']}").json()["name"] == created_place["name"]
+
+
+def test_any_user_can_edit_any_place(client, created_place):
+    first = patch(client, created_place["id"], {"name": "A"}, user="anna").json()
+    second = patch(client, created_place["id"], {"name": "B"}, user="bartek").json()
+    assert (first["updated_by"], second["updated_by"]) == ("anna", "bartek")

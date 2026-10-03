@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.auth import CurrentUserId
+from app.auth import CurrentUser
 from app.models.place import Coordinates, OsmRef, Place, PlaceCreate, PlaceUpdate
 from app.repositories import places as repo
 from app.routers.deps import Db
@@ -15,9 +15,9 @@ def _osm_conflict(osm: OsmRef) -> HTTPException:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_place(place: PlaceCreate, db: Db, user_id: CurrentUserId) -> Place:
+async def create_place(place: PlaceCreate, db: Db, user: CurrentUser) -> Place:
     try:
-        return await repo.create_place(db, place, user_id)
+        return await repo.create_place(db, place, user.id)
     except repo.PlaceAlreadyExists:
         raise _osm_conflict(place.osm)
 
@@ -49,9 +49,10 @@ async def get_place(place_id: str, db: Db) -> Place:
 
 
 @router.patch("/{place_id}")
-async def update_place(place_id: str, update: PlaceUpdate, db: Db, user_id: CurrentUserId) -> Place:
+async def update_place(place_id: str, update: PlaceUpdate, db: Db, user: CurrentUser) -> Place:
+    """Any logged-in user can edit a place; the last editor is recorded in `updated_by`."""
     try:
-        place = await repo.update_place(db, place_id, update, user_id)
+        place = await repo.update_place(db, place_id, update, user.id)
     except repo.PlaceAlreadyExists:
         raise _osm_conflict(update.osm)
     if place is None:

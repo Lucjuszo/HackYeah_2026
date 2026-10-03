@@ -5,12 +5,12 @@ from bson import ObjectId
 
 from app.config import settings
 from app.repositories import places as repo
-from tests.helpers import MEDIA_DIR, make_image
+from tests.helpers import ANONYMOUS, DEFAULT_USER, MEDIA_DIR, as_admin, as_user, make_image
 
 
-def upload(client, place_id, data=None, filename="photo.jpg"):
+def upload(client, place_id, data=None, filename="photo.jpg", headers=None):
     data = make_image() if data is None else data
-    return client.post(f"/places/{place_id}/photos", files={"file": (filename, data, "image/jpeg")})
+    return client.post(f"/places/{place_id}/photos", files={"file": (filename, data, "image/jpeg")}, headers=headers)
 
 
 def stored_files() -> list[Path]:
@@ -113,3 +113,32 @@ class TestDelete:
 
     def test_invalid_place_id(self, client):
         assert client.delete("/places/not-an-id/photos/abc").status_code == 404
+
+
+class TestPermissions:
+    def test_upload_records_uploader(self, client, created_place):
+        photo = upload(client, created_place["id"], headers=as_user("anna")).json()
+        assert photo["uploaded_by"] == "anna"
+        place = client.get(f"/places/{created_place['id']}").json()
+        assert place["photos"][0]["uploaded_by"] == "anna"
+
+    def test_anonymous_cannot_upload(self, client, created_place):
+        assert upload(client, created_place["id"], headers=ANONYMOUS).status_code == 401
+        assert stored_files() == []
+
+    def test_other_user_cannot_delete(self, client, created_place):
+        photo = upload(client, created_place["id"], headers=as_user("anna")).json()
+        url = f"/places/{created_place['id']}/photos/{photo['id']}"
+        assert client.delete(url, headers=as_user("bartek")).status_code == 403
+        assert client.get(photo["url"]).status_code == 200
+
+    def test_admin_can_delete(self, client, created_place):
+        photo = upload(client, created_place["id"], headers=as_user("anna")).json()
+        assert client.delete(f"/places/{created_place['id']}/photos/{photo['id']}", headers=as_admin()).status_code == 204
+        assert client.get(photo["url"]).status_code == 404
+
+    def test_anonymous_cannot_delete(self, client, created_place):
+        photo = upload(client, created_place["id"]).json()
+        url = f"/places/{created_place['id']}/photos/{photo['id']}"
+        assert client.delete(url, headers=ANONYMOUS).status_code == 401
+        assert photo["uploaded_by"] == DEFAULT_USER

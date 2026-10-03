@@ -10,7 +10,8 @@ from app.config import Settings, settings
 def create_client(config: Settings = settings) -> AsyncMongoClient:
     uri, kwargs = config.mongo_connection()
     # tz_aware: return UTC-aware datetimes instead of naive ones, matching what we write.
-    return AsyncMongoClient(uri, tz_aware=True, **kwargs)
+    # 10 s instead of the default 30 s: an unreachable database should fail fast.
+    return AsyncMongoClient(uri, tz_aware=True, serverSelectionTimeoutMS=10_000, **kwargs)
 
 
 client: AsyncMongoClient = create_client()

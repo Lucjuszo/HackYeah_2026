@@ -4,6 +4,7 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
+from app.auth import CurrentUser
 from app.config import settings
 from app.db import utcnow
 from app.images import InvalidImage, process_image
@@ -16,11 +17,11 @@ router = APIRouter(prefix="/places/{place_id}/photos", tags=["photos"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def upload_photo(place_id: str, file: UploadFile, db: Db) -> Photo:
+async def upload_photo(place_id: str, file: UploadFile, db: Db, user: CurrentUser) -> Photo:
     # place_id ends up in the storage path, so reject anything that isn't an ObjectId up front.
     if not ObjectId.is_valid(place_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Place not found")
-    raw =await file.read(settings.max_photo_bytes + 1)
+    raw = await file.read(settings.max_photo_bytes + 1)
     if len(raw) > settings.max_photo_bytes:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"Max photo size is {settings.max_photo_bytes} bytes")
     try:
@@ -37,6 +38,7 @@ async def upload_photo(place_id: str, file: UploadFile, db: Db) -> Photo:
         "width": image.width,
         "height": image.height,
         "size": len(image.data),
+        "uploaded_by": user.id,
         "created_at": utcnow(),
     }
 
@@ -58,8 +60,14 @@ async def upload_photo(place_id: str, file: UploadFile, db: Db) -> Photo:
 
 
 @router.delete("/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_photo(place_id: str, photo_id: str, db: Db) -> None:
+async def delete_photo(place_id: str, photo_id: str, db: Db, user: CurrentUser) -> None:
+    """The uploader or an admin only."""
+    photo = await repo.get_photo(db, place_id, photo_id)
+    if photo is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Photo not found")
+    if not (user.is_admin or photo.uploaded_by == user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the uploader or an admin can delete this photo")
     key = await repo.remove_photo(db, place_id, photo_id)
-    if key is None:
+    if key is None:  # removed in the meantime
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Photo not found")
     await get_storage().delete(key)

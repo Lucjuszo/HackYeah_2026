@@ -11,6 +11,16 @@ from pathlib import Path
 os.environ["USE_REMOTE_MONGO"] = "false"
 os.environ["MONGO_DB"] = "hackyeah_test"
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp(prefix="hackyeah-media-")
+# Auth: fixed secret, fake (never contacted) OAuth apps so both providers are "configured",
+# dev login off (tests that need it switch it on) and no frontend redirect.
+os.environ["JWT_SECRET"] = "test-secret-not-for-production-use-0123456789"
+os.environ["GITHUB_CLIENT_ID"] = "test-github-client"
+os.environ["GITHUB_CLIENT_SECRET"] = "test-github-secret"
+os.environ["GOOGLE_CLIENT_ID"] = "test-google-client"
+os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-secret"
+os.environ["ADMIN_EMAILS"] = "boss@example.com"
+os.environ["AUTH_DEV_LOGIN"] = "false"
+os.environ.pop("AUTH_REDIRECT_URL", None)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -18,9 +28,9 @@ from pymongo import MongoClient  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.main import app  # noqa: E402
-from app.repositories import comments, places, ratings  # noqa: E402
+from app.repositories import comments, places, ratings, users  # noqa: E402
 
-from tests.helpers import EXAMPLES_DIR, MEDIA_DIR  # noqa: E402
+from tests.helpers import DEFAULT_USER, EXAMPLES_DIR, MEDIA_DIR, as_user  # noqa: E402
 
 EXAMPLE_PLACE = EXAMPLES_DIR / "places" / "01-kawiarnia-pod-kodem.json"
 
@@ -29,7 +39,8 @@ EXAMPLE_PLACE = EXAMPLES_DIR / "places" / "01-kawiarnia-pod-kodem.json"
 def client():
     # One client for the whole session: the async Mongo client is bound to the event loop
     # TestClient runs the app on, and the lifespan (connect + indexes) should run once.
-    with TestClient(app) as c:
+    # Requests are authenticated as DEFAULT_USER unless a test passes its own Authorization header.
+    with TestClient(app, headers=as_user(DEFAULT_USER)) as c:
         yield c
     shutil.rmtree(MEDIA_DIR, ignore_errors=True)
 
@@ -51,7 +62,7 @@ def _clean_state(request):
     database = request.getfixturevalue("db") if uses_db else None
     yield
     if database is not None:
-        for collection in (places.COLLECTION, ratings.COLLECTION, comments.COLLECTION):
+        for collection in (places.COLLECTION, ratings.COLLECTION, comments.COLLECTION, users.COLLECTION):
             database[collection].delete_many({})  # keep indexes, drop data
     # Empty the media dir but keep it: the app creates it once at startup.
     for entry in MEDIA_DIR.iterdir():

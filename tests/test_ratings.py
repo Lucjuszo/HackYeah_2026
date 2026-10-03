@@ -4,8 +4,7 @@ from statistics import mean
 import pytest
 from bson import ObjectId
 
-from app.auth import MOCK_USER_ID
-from tests.helpers import as_user
+from tests.helpers import DEFAULT_USER, as_user
 
 
 def rate(client, place_id, score, user="anna"):
@@ -92,7 +91,7 @@ def test_get_my_rating(client, created_place):
 
 def test_default_mock_user(client, created_place):
     result = client.put(f"/places/{created_place['id']}/ratings/me", json={"score": 4}).json()
-    assert result["rating"]["user_id"] == MOCK_USER_ID
+    assert result["rating"]["user_id"] == DEFAULT_USER
 
 
 @pytest.mark.parametrize("score", [0, 6, 3.5, "five", None])
