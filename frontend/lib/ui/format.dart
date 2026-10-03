@@ -13,7 +13,15 @@ const List<String> weekdayNames = [
   'Niedziela',
 ];
 
-const List<String> _weekdayShort = ['pon.', 'wt.', 'śr.', 'czw.', 'pt.', 'sob.', 'niedz.'];
+const List<String> _weekdayShort = [
+  'pon.',
+  'wt.',
+  'śr.',
+  'czw.',
+  'pt.',
+  'sob.',
+  'niedz.',
+];
 
 const List<String> _monthsGenitive = [
   'stycznia',
@@ -35,7 +43,9 @@ String plural(int n, String one, String few, String many) {
   if (n == 1) return '$n $one';
   final lastTwo = n % 100;
   final last = n % 10;
-  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) return '$n $few';
+  if (last >= 2 && last <= 4 && (lastTwo < 12 || lastTwo > 14)) {
+    return '$n $few';
+  }
   return '$n $many';
 }
 

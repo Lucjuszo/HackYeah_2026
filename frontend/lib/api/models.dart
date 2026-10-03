@@ -121,9 +121,8 @@ class RatingSummary {
 class PriceRange {
   const PriceRange(this.min, this.max);
 
-  static PriceRange? fromJson(Json? json) => json == null
-      ? null
-      : PriceRange(json['min'] as int, json['max'] as int?);
+  static PriceRange? fromJson(Json? json) =>
+      json == null ? null : PriceRange(json['min'] as int, json['max'] as int?);
 
   final int min;
 
@@ -331,7 +330,9 @@ class Place {
     usagePrice: json['usage_price'] as String?,
     priceRange: PriceRange.fromJson(json['price_range'] as Json?),
     atmosphere: Atmosphere.fromApi(json['atmosphere']),
-    features: [for (final f in (json['features'] as List? ?? const [])) f as String],
+    features: [
+      for (final f in (json['features'] as List? ?? const [])) f as String,
+    ],
     menu: [
       for (final item in (json['menu'] as List? ?? const []))
         MenuItem.fromJson(item as Json),
@@ -438,5 +439,27 @@ class GeoBounds {
 }
 
 /// Photo URLs are relative ("/media/...") unless the backend has PUBLIC_BASE_URL set.
-String? resolveUrl(Uri apiUrl, String? url) =>
-    url == null ? null : apiUrl.resolve(url).toString();
+///
+/// During local development the backend can still return an absolute
+/// `http://localhost:8000/media/...` URL. On a phone, `localhost` points to
+/// the phone itself, so reuse the host configured for API requests instead.
+String? resolveUrl(Uri apiUrl, String? url) {
+  if (url == null) return null;
+  final resolved = apiUrl.resolve(url);
+  final isLoopback = resolved.host == 'localhost' ||
+      resolved.host == '127.0.0.1' ||
+      resolved.host == '::1';
+  final apiIsLoopback = apiUrl.host == 'localhost' ||
+      apiUrl.host == '127.0.0.1' ||
+      apiUrl.host == '::1';
+  if (isLoopback && !apiIsLoopback) {
+    return resolved
+        .replace(
+          scheme: apiUrl.scheme,
+          host: apiUrl.host,
+          port: apiUrl.hasPort ? apiUrl.port : null,
+        )
+        .toString();
+  }
+  return resolved.toString();
+}

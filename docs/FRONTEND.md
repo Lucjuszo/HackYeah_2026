@@ -7,6 +7,9 @@ Front: Flutter (`frontend/`). Kontrakt API: `http://localhost:8000/docs` (Swagge
   → `const apiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://localhost:8000');`
 - Flutter web (Chrome): CORS przepuszcza każdy port `localhost` (`CORS_ALLOW_LOCALHOST`).
   Aplikacja Windows (`flutter run -d windows`): CORS jej nie dotyczy.
+- Android nie używa CORS, ale `localhost` wskazuje na urządzenie Android. Emulator używa
+  `10.0.2.2`, a telefon fizyczny wymaga adresu LAN komputera przekazanego przez
+  `--dart-define=API_URL=http://IP_KOMPUTERA:8000`.
 - Daty (`created_at`, `closes_at`, ...) to ISO 8601 z offsetem → `DateTime.parse(...).toLocal()`.
 - Opcjonalnie klient Dart z OpenAPI: `npx @openapitools/openapi-generator-cli generate -i http://localhost:8000/openapi.json -g dart -o frontend/api_client`.
 

@@ -165,7 +165,9 @@ class AmenityBadges extends StatelessWidget {
   final Amenities amenities;
   final double fontSize;
 
-  static List<(IconData, String)> available(Amenities a) => <(IconData, String)>[
+  static List<(IconData, String)> available(
+    Amenities a,
+  ) => <(IconData, String)>[
     if (a.wifi ?? false) (Icons.wifi_rounded, 'Wi-Fi'),
     if (a.powerOutlets ?? false) (Icons.power_rounded, 'Gniazdka'),
     if (a.food ?? false) (Icons.restaurant_rounded, 'Jedzenie'),
@@ -202,11 +204,7 @@ class AmenityBadges extends StatelessWidget {
 
 /// Rating pin on the map; dark for great places, lighter for weaker / unrated ones.
 class MapMarker extends StatelessWidget {
-  const MapMarker({
-    required this.rating,
-    this.selected = false,
-    super.key,
-  });
+  const MapMarker({required this.rating, this.selected = false, super.key});
 
   final double? rating;
   final bool selected;

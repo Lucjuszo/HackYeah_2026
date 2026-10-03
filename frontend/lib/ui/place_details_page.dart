@@ -92,12 +92,13 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
     final place = _place;
     final photos = place?.photos ?? const <Photo>[];
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: CustomScrollView(
         slivers: <Widget>[
           SliverAppBar(
             pinned: true,
             expandedHeight: 260,
-            backgroundColor: Colors.white,
+            backgroundColor: AppColors.background,
             surfaceTintColor: Colors.transparent,
             leading: Padding(
               padding: const EdgeInsets.all(8),
@@ -106,7 +107,10 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
                 child: IconButton(
                   key: const ValueKey<String>('details-back'),
                   tooltip: 'Wróć',
-                  icon: const Icon(Icons.arrow_back_rounded, color: AppColors.ink),
+                  icon: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: AppColors.ink,
+                  ),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
@@ -145,12 +149,15 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
                     ),
                     _Section(
                       title: 'Godziny otwarcia',
-                      child: _OpeningHoursTable(hours: place.openingHours),
+                      child: _OpeningHoursDisclosure(hours: place.openingHours),
                     ),
                     if (photos.length > 1)
                       _Section(
                         title: 'Zdjęcia (${photos.length})',
-                        child: _PhotoStrip(photos: photos, onOpen: (int i) => _openPhoto(photos, i)),
+                        child: _PhotoStrip(
+                          photos: photos,
+                          onOpen: (int i) => _openPhoto(photos, i),
+                        ),
                       ),
                     if (place.features.isNotEmpty)
                       _Section(
@@ -161,7 +168,10 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
                           children: <Widget>[
                             for (final feature in place.features)
                               Chip(
-                                label: Text(feature, style: const TextStyle(fontSize: 12)),
+                                label: Text(
+                                  feature,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
                                 visualDensity: VisualDensity.compact,
                                 side: BorderSide.none,
                                 backgroundColor: AppColors.chip,
@@ -170,10 +180,15 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
                         ),
                       ),
                     if (place.menu.isNotEmpty)
-                      _Section(title: 'Menu', child: _Menu(items: place.menu)),
+                      _Section(
+                        title: 'Menu',
+                        child: _Menu(items: place.menu),
+                      ),
                   ],
                   _Section(
-                    title: _commentsTotal > 0 ? 'Opinie ($_commentsTotal)' : 'Opinie',
+                    title: _commentsTotal > 0
+                        ? 'Opinie ($_commentsTotal)'
+                        : 'Opinie',
                     child: _opinions(place?.rating ?? summary.rating),
                   ),
                   if (place?.isMock ?? summary.isMock)
@@ -181,13 +196,20 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
                       padding: EdgeInsets.only(top: 24),
                       child: Row(
                         children: <Widget>[
-                          Icon(Icons.info_outline_rounded, size: 14, color: AppColors.muted),
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 14,
+                            color: AppColors.muted,
+                          ),
                           SizedBox(width: 6),
                           Expanded(
                             child: Text(
                               'Miejsce z danych demonstracyjnych: nazwa i adres są prawdziwe '
                               '(OpenStreetMap), część szczegółów przykładowa.',
-                              style: TextStyle(fontSize: 11, color: AppColors.muted),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.muted,
+                              ),
                             ),
                           ),
                         ],
@@ -214,14 +236,22 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
       children: <Widget>[
         Text(
           summary.name,
-          style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w700, color: AppColors.ink),
+          style: const TextStyle(
+            fontSize: 21,
+            fontWeight: FontWeight.w700,
+            color: AppColors.ink,
+          ),
         ),
         const SizedBox(height: 8),
         RatingLine(rating: place?.rating ?? summary.rating, size: 15),
         const SizedBox(height: 8),
         Row(
           children: <Widget>[
-            const Icon(Icons.location_on_outlined, size: 15, color: AppColors.muted),
+            const Icon(
+              Icons.location_on_outlined,
+              size: 15,
+              color: AppColors.muted,
+            ),
             const SizedBox(width: 4),
             Expanded(
               child: Text(
@@ -243,7 +273,8 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
             runSpacing: 6,
             children: <Widget>[
               if (price != null) Pill(price, icon: Icons.payments_outlined),
-              if (atmosphere != null) Pill(atmosphere.label, icon: Icons.graphic_eq_rounded),
+              if (atmosphere != null)
+                Pill(atmosphere.label, icon: Icons.graphic_eq_rounded),
             ],
           ),
         ],
@@ -286,7 +317,9 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
                   : TextButton(
                       key: const ValueKey<String>('more-comments'),
                       onPressed: _loadComments,
-                      child: Text('Pokaż więcej (${_commentsTotal - _comments.length})'),
+                      child: Text(
+                        'Pokaż więcej (${_commentsTotal - _comments.length})',
+                      ),
                     ),
             ),
         ],
@@ -310,7 +343,11 @@ class _Section extends StatelessWidget {
         children: <Widget>[
           Text(
             title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.ink),
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+            ),
           ),
           const SizedBox(height: 10),
           child,
@@ -321,7 +358,11 @@ class _Section extends StatelessWidget {
 }
 
 class _PhotoHeader extends StatefulWidget {
-  const _PhotoHeader({required this.photos, required this.fallbackUrl, required this.onOpen});
+  const _PhotoHeader({
+    required this.photos,
+    required this.fallbackUrl,
+    required this.onOpen,
+  });
 
   final List<Photo> photos;
   final String? fallbackUrl;
@@ -347,7 +388,11 @@ class _PhotoHeaderState extends State<_PhotoHeader> {
           onPageChanged: (int page) => setState(() => _page = page),
           itemBuilder: (_, int i) => GestureDetector(
             onTap: () => widget.onOpen(i),
-            child: PlaceImage(url: widget.photos[i].full.url, radius: 0, iconSize: 48),
+            child: PlaceImage(
+              url: widget.photos[i].full.url,
+              radius: 0,
+              iconSize: 48,
+            ),
           ),
         ),
         if (widget.photos.length > 1)
@@ -387,7 +432,12 @@ class _PhotoStrip extends StatelessWidget {
         separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (_, int i) => GestureDetector(
           onTap: () => onOpen(i),
-          child: PlaceImage(url: photos[i].thumbnailUrl, width: 96, height: 96, radius: 14),
+          child: PlaceImage(
+            url: photos[i].thumbnailUrl,
+            width: 96,
+            height: 96,
+            radius: 14,
+          ),
         ),
       ),
     );
@@ -396,7 +446,11 @@ class _PhotoStrip extends StatelessWidget {
 
 /// Fullscreen, swipeable, pinch-to-zoom photos (full versions).
 class PhotoViewerPage extends StatefulWidget {
-  const PhotoViewerPage({required this.photos, required this.initialIndex, super.key});
+  const PhotoViewerPage({
+    required this.photos,
+    required this.initialIndex,
+    super.key,
+  });
 
   final List<Photo> photos;
   final int initialIndex;
@@ -406,7 +460,9 @@ class PhotoViewerPage extends StatefulWidget {
 }
 
 class _PhotoViewerPageState extends State<PhotoViewerPage> {
-  late final PageController _controller = PageController(initialPage: widget.initialIndex);
+  late final PageController _controller = PageController(
+    initialPage: widget.initialIndex,
+  );
   late int _page = widget.initialIndex;
 
   @override
@@ -455,7 +511,8 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
             padding: const EdgeInsets.all(14),
             child: Text(
               [
-                if (photo.uploadedByName != null) 'Dodał(a): ${photo.uploadedByName}',
+                if (photo.uploadedByName != null)
+                  'Dodał(a): ${photo.uploadedByName}',
                 fmt.date(photo.createdAt),
               ].join(' · '),
               style: const TextStyle(color: Colors.white70, fontSize: 12),
@@ -496,15 +553,25 @@ class _AmenitiesGrid extends StatelessWidget {
                 width: itemWidth,
                 child: Row(
                   children: <Widget>[
-                    Icon(icon, size: 18, color: value == false ? AppColors.placeholderIcon : AppColors.subtle),
+                    Icon(
+                      icon,
+                      size: 18,
+                      color: value == false
+                          ? AppColors.placeholderIcon
+                          : AppColors.subtle,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         label,
                         style: TextStyle(
                           fontSize: 13,
-                          color: value == false ? AppColors.muted : AppColors.ink,
-                          decoration: value == false ? TextDecoration.lineThrough : null,
+                          color: value == false
+                              ? AppColors.muted
+                              : AppColors.ink,
+                          decoration: value == false
+                              ? TextDecoration.lineThrough
+                              : null,
                         ),
                       ),
                     ),
@@ -531,6 +598,33 @@ class _AmenitiesGrid extends StatelessWidget {
   }
 }
 
+class _OpeningHoursDisclosure extends StatelessWidget {
+  const _OpeningHoursDisclosure({required this.hours});
+
+  final OpeningHours? hours;
+
+  @override
+  Widget build(BuildContext context) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        initiallyExpanded: true,
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        title: const Text(
+          'Pokaż tygodniowy rozkład',
+          style: TextStyle(fontSize: 13),
+        ),
+        textColor: AppColors.ink,
+        collapsedTextColor: AppColors.subtle,
+        iconColor: AppColors.subtle,
+        collapsedIconColor: AppColors.subtle,
+        children: <Widget>[_OpeningHoursTable(hours: hours)],
+      ),
+    );
+  }
+}
+
 class _OpeningHoursTable extends StatelessWidget {
   const _OpeningHoursTable({required this.hours});
 
@@ -540,10 +634,16 @@ class _OpeningHoursTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final hours = this.hours;
     if (hours == null) {
-      return const Text('Brak danych o godzinach otwarcia.', style: TextStyle(fontSize: 13, color: AppColors.muted));
+      return const Text(
+        'Brak danych o godzinach otwarcia.',
+        style: TextStyle(fontSize: 13, color: AppColors.muted),
+      );
     }
     if (hours.alwaysOpen) {
-      return const Text('Otwarte całą dobę, 7 dni w tygodniu.', style: TextStyle(fontSize: 13));
+      return const Text(
+        'Otwarte całą dobę, 7 dni w tygodniu.',
+        style: TextStyle(fontSize: 13),
+      );
     }
     final today = DateTime.now().weekday - 1;
     return Column(
@@ -559,7 +659,9 @@ class _OpeningHoursTable extends StatelessWidget {
                     fmt.weekdayNames[day],
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: day == today ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight: day == today
+                          ? FontWeight.w700
+                          : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -571,8 +673,12 @@ class _OpeningHoursTable extends StatelessWidget {
                     textAlign: TextAlign.right,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: day == today ? FontWeight.w700 : FontWeight.w400,
-                      color: hours.forDay(day).isEmpty ? AppColors.muted : AppColors.ink,
+                      fontWeight: day == today
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      color: hours.forDay(day).isEmpty
+                          ? AppColors.muted
+                          : AppColors.ink,
                     ),
                   ),
                 ),
@@ -593,18 +699,25 @@ class _Menu extends StatelessWidget {
   Widget build(BuildContext context) {
     final byCategory = <String, List<MenuItem>>{};
     for (final item in items) {
-      byCategory.putIfAbsent(item.category ?? 'Inne', () => <MenuItem>[]).add(item);
+      byCategory
+          .putIfAbsent(item.category ?? 'Inne', () => <MenuItem>[])
+          .add(item);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        for (final MapEntry<String, List<MenuItem>>(:key, :value) in byCategory.entries) ...<Widget>[
+        for (final MapEntry<String, List<MenuItem>>(:key, :value)
+            in byCategory.entries) ...<Widget>[
           if (byCategory.length > 1)
             Padding(
               padding: const EdgeInsets.only(top: 6, bottom: 4),
               child: Text(
                 key,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.muted),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.muted,
+                ),
               ),
             ),
           for (final item in value)
@@ -617,17 +730,30 @@ class _Menu extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(item.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                        if (item.description != null && item.description!.isNotEmpty)
+                        Text(
+                          item.name,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (item.description != null &&
+                            item.description!.isNotEmpty)
                           Text(
                             item.description!,
-                            style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.muted,
+                            ),
                           ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Text(fmt.money(item.price, item.currency), style: const TextStyle(fontSize: 13)),
+                  Text(
+                    fmt.money(item.price, item.currency),
+                    style: const TextStyle(fontSize: 13),
+                  ),
                 ],
               ),
             ),
@@ -654,7 +780,11 @@ class _RatingSummaryCard extends StatelessWidget {
         children: <Widget>[
           Text(
             rating.average == null ? '–' : fmt.decimal(rating.average!),
-            style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, color: AppColors.ink),
+            style: const TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+            ),
           ),
           const SizedBox(width: 14),
           Column(
@@ -663,7 +793,9 @@ class _RatingSummaryCard extends StatelessWidget {
               RatingStars(rating: rating.average, size: 18),
               const SizedBox(height: 4),
               Text(
-                rating.count == 0 ? 'Brak ocen' : fmt.ratingsCount(rating.count),
+                rating.count == 0
+                    ? 'Brak ocen'
+                    : fmt.ratingsCount(rating.count),
                 style: const TextStyle(fontSize: 12, color: AppColors.muted),
               ),
             ],
@@ -695,7 +827,10 @@ class _CommentTile extends StatelessWidget {
             backgroundColor: AppColors.chip,
             child: Text(
               name.characters.first.toUpperCase(),
-              style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.subtle),
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.subtle,
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -706,17 +841,27 @@ class _CommentTile extends StatelessWidget {
                 Text.rich(
                   TextSpan(
                     children: <InlineSpan>[
-                      TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
                       TextSpan(
-                        text: '  ${fmt.date(comment.createdAt)}${comment.editedAt != null ? ' · edytowano' : ''}',
-                        style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                        text: name,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      TextSpan(
+                        text:
+                            '  ${fmt.date(comment.createdAt)}${comment.editedAt != null ? ' · edytowano' : ''}',
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 11,
+                        ),
                       ),
                     ],
                   ),
                   style: const TextStyle(fontSize: 13),
                 ),
                 const SizedBox(height: 4),
-                Text(comment.text, style: const TextStyle(fontSize: 13, height: 1.35)),
+                Text(
+                  comment.text,
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
               ],
             ),
           ),

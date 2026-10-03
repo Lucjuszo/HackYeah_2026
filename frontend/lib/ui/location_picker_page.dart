@@ -17,7 +17,9 @@ class LocationChoice {
   });
 
   /// Whole Poland: no reference point, the map shows the entire country.
-  static const LocationChoice wholeCountry = LocationChoice(label: 'Cała Polska');
+  static const LocationChoice wholeCountry = LocationChoice(
+    label: 'Cała Polska',
+  );
 
   final String label;
   final LatLon? point;
@@ -107,9 +109,8 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
     } on LocationFailure catch (e) {
       if (!mounted) return;
       setState(() => _locating = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
@@ -124,7 +125,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
     Widget? trailing,
   }) {
     return Material(
-      color: const Color(0xFFF1F1F1),
+      color: AppColors.surface,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         key: key,
@@ -140,11 +141,17 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                      ),
                     ),
                   ],
                 ),
@@ -161,9 +168,9 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   Widget build(BuildContext context) {
     final typing = _controller.text.trim().length >= 2;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.background,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
@@ -185,6 +192,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
               key: const ValueKey<String>('location-search'),
               controller: _controller,
               autofocus: true,
+              textAlignVertical: TextAlignVertical.center,
               onChanged: _onChanged,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
@@ -201,7 +209,12 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                         },
                       ),
                 filled: true,
-                fillColor: const Color(0xFFE7E7E7),
+                fillColor: AppColors.field,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(22),
                   borderSide: BorderSide.none,
@@ -319,7 +332,10 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   }
 
   static IconData _iconFor(String kind) => switch (kind) {
-    'city' || 'town' || 'village' || 'municipality' => Icons.location_city_rounded,
+    'city' ||
+    'town' ||
+    'village' ||
+    'municipality' => Icons.location_city_rounded,
     'house' || 'building' || 'road' => Icons.home_work_outlined,
     _ => Icons.location_on_outlined,
   };

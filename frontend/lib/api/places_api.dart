@@ -124,7 +124,8 @@ class PlacesApi {
       return 'Serwer ma chwilowy problem. Spróbuj za moment.';
     }
     try {
-      final detail = (jsonDecode(utf8.decode(response.bodyBytes)) as Json)['detail'];
+      final detail =
+          (jsonDecode(utf8.decode(response.bodyBytes)) as Json)['detail'];
       if (detail is String) return detail;
     } on Object {
       // fall through

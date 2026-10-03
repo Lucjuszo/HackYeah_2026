@@ -23,7 +23,9 @@ class GeolocatorLocationService implements LocationService {
   Future<LatLon> currentLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        throw const LocationFailure('Usługi lokalizacji są wyłączone w systemie.');
+        throw const LocationFailure(
+          'Usługi lokalizacji są wyłączone w systemie.',
+        );
       }
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {

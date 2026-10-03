@@ -7,11 +7,7 @@ final _apiUrl = Uri.parse('http://localhost:8000/');
 Json _summaryJson() => {
   'id': 'abc',
   'name': 'Cafe Botanica',
-  'address': {
-    'city': 'Kraków',
-    'street': 'Floriańska',
-    'house_number': '15',
-  },
+  'address': {'city': 'Kraków', 'street': 'Floriańska', 'house_number': '15'},
   'coordinates': {'lat': 50, 'lon': 19.94},
   'amenities': {'wifi': true, 'power_outlets': false},
   'rating': {'average': 4.5, 'count': 12},
@@ -96,7 +92,10 @@ void main() {
     expect(place.openingHours!.forDay(6), isEmpty);
     expect(place.features, ['ogródek']);
     expect(place.menu.single.currency, 'PLN');
-    expect(place.photos.single.thumbnailUrl, 'https://cdn.example.com/full.jpg');
+    expect(
+      place.photos.single.thumbnailUrl,
+      'https://cdn.example.com/full.jpg',
+    );
   });
 
   test('GeocodeResult.fromJson mapuje bbox [S, N, W, E]', () {
@@ -117,7 +116,17 @@ void main() {
 
   test('resolveUrl', () {
     expect(resolveUrl(_apiUrl, null), isNull);
-    expect(resolveUrl(_apiUrl, '/media/x.jpg'), 'http://localhost:8000/media/x.jpg');
+    expect(
+      resolveUrl(_apiUrl, '/media/x.jpg'),
+      'http://localhost:8000/media/x.jpg',
+    );
     expect(resolveUrl(_apiUrl, 'https://a.b/x.jpg'), 'https://a.b/x.jpg');
+    expect(
+      resolveUrl(
+        Uri.parse('http://10.0.2.2:8000/'),
+        'http://localhost:8000/media/x.jpg',
+      ),
+      'http://10.0.2.2:8000/media/x.jpg',
+    );
   });
 }
