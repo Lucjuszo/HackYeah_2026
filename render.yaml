@@ -5,7 +5,7 @@ services:
   # Backend: FastAPI + MongoDB Atlas
   - type: web
     name: focusmap-api
-    branch: db-on-compass # mian
+    branch: main
     runtime: python
     plan: free
     region: frankfurt
@@ -27,7 +27,7 @@ services:
       - key: CORS_ALLOW_LOCALHOST
         value: "false"
       - key: PUBLIC_BASE_URL
-        value: https://focusmap-api-188c.onrender.com
+        value: https://focusmap-api-6spc.onrender.com
       - key: TIMEZONE
         value: Europe/Warsaw
       - key: JWT_SECRET
@@ -35,8 +35,8 @@ services:
       - key: AUTH_DEV_LOGIN
         value: "false"
       # Logowanie OAuth – wpisz w Dashboardzie. Callbacki u dostawców:
-      # https://focusmap-api-188c.onrender.com/auth/google/callback
-      # https://focusmap-api-188c.onrender.com/auth/github/callback
+      # https://focusmap-api-6spc.onrender.com/auth/google/callback
+      # https://focusmap-api-6spc.onrender.com/auth/github/callback
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
@@ -57,14 +57,14 @@ services:
   # Frontend: Flutter web, działa w przeglądarce telefonu i komputera
   - type: web
     name: focusmap
-    branch: db-on-compass # mian
+    branch: main
     runtime: static
     rootDir: frontend
     buildCommand: bash render-build.sh
     staticPublishPath: build/web
     envVars:
       - key: API_URL
-        value: https://focusmap-api-188c.onrender.com
+        value: https://focusmap-api-6spc.onrender.com
       - key: FLUTTER_VERSION
         value: 3.47.6
     headers:

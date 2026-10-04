@@ -63,7 +63,7 @@ Usunięcie danych mock w Compass: filtr `{ "is_mock": true }` w kolekcjach `plac
 
 Oba serwisy opisuje [`render.yaml`](render.yaml):
 
-- `focusmap-api`: backend, https://focusmap-api-188c.onrender.com
+- `focusmap-api`: backend, https://focusmap-api-6spc.onrender.com
 - `focusmap`: frontend Flutter web, https://focusmap-12d9.onrender.com (działa w przeglądarce telefonu)
 
 Pierwsze uruchomienie: Render Dashboard → **New → Blueprint** → to repo, potem wpisz `MONGODB_URI`.
