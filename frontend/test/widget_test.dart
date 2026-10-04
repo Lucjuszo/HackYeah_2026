@@ -89,7 +89,8 @@ void main() {
   group('lista i mapa', () {
     displayTest('miejsca z backendu są na liście i na mapie', (tester) async {
       final backend = await pumpApp(tester);
-      expect(backend.searches, isNotEmpty);
+      await tester.pump(const Duration(seconds: 1));
+      expect(backend.searches, hasLength(1)); // one search at start, not one per startup event
 
       expect(find.text('2 miejsca na mapie'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
@@ -102,6 +103,38 @@ void main() {
       expect(text('Floriańska 15, Kraków'), findsWidgets);
       expect(text('Otwarte teraz'), findsWidgets);
       expect(text('Zamknięte'), findsWidgets);
+    });
+
+    displayTest('mapa wczytuje miejsca od razu, choć rozmiar ekranu był znany dopiero po starcie', (tester) async {
+      // Phones and browsers often report a zero-sized screen for the first frame(s).
+      tester.view.physicalSize = Size.zero;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final backend = FakeBackend();
+      await tester.pumpWidget(
+        MiejscowkiApp(
+          api: backend.api(),
+          auth: TestAuth().controller(backend),
+          locationService: FakeLocationService(result: const LatLon(50.06, 19.94)),
+          showMapTiles: false,
+        ),
+      );
+      await tester.pump();
+
+      expect(backend.searches, isEmpty); // nothing to search yet
+
+      tester.view.physicalSize = const Size(900, 1000);
+      await tester.pump(const Duration(seconds: 1)); // no gesture, no tap: just waiting
+      await tester.pumpAndSettle();
+
+      expect(backend.searches, hasLength(1));
+      expect(find.text('2 miejsca na mapie'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('marker-p2')), findsOneWidget);
+      // The search covers the whole of Poland, not a degenerate zero-sized area.
+      final bbox = backend.lastSearch.queryParameters['bbox']!.split(',').map(double.parse).toList();
+      expect(bbox[2] - bbox[0], greaterThan(5));
+      expect(bbox[3] - bbox[1], greaterThan(5));
     });
 
     displayTest('pusta lista', (tester) async {

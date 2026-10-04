@@ -32,6 +32,7 @@ class MiejscowkiApp extends StatelessWidget {
     required this.auth,
     this.locationService = const GeolocatorLocationService(),
     this.showMapTiles = true,
+    this.tileProvider,
     super.key,
   });
 
@@ -41,6 +42,9 @@ class MiejscowkiApp extends StatelessWidget {
 
   /// Off in widget tests: tiles come from tile.openstreetmap.org.
   final bool showMapTiles;
+
+  /// Where the main map's tiles come from; null = tile.openstreetmap.org (tests use fake images).
+  final TileProvider? tileProvider;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +57,7 @@ class MiejscowkiApp extends StatelessWidget {
         auth: auth,
         locationService: locationService,
         showMapTiles: showMapTiles,
+        tileProvider: tileProvider,
       ),
     );
   }
@@ -109,6 +114,7 @@ class MapHomePage extends StatefulWidget {
     required this.auth,
     required this.locationService,
     this.showMapTiles = true,
+    this.tileProvider,
     super.key,
   });
 
@@ -116,6 +122,7 @@ class MapHomePage extends StatefulWidget {
   final AuthController auth;
   final LocationService locationService;
   final bool showMapTiles;
+  final TileProvider? tileProvider;
 
   @override
   State<MapHomePage> createState() => _MapHomePageState();
@@ -128,6 +135,7 @@ class _MapHomePageState extends State<MapHomePage> {
   final _searchController = TextEditingController();
   final _sheetController = DraggableScrollableController();
   final _mapController = MapController();
+  final _reloadTiles = StreamController<void>.broadcast();
 
   // Filters
   _RatingFilter _rating = _RatingFilter.any;
@@ -151,6 +159,8 @@ class _MapHomePageState extends State<MapHomePage> {
   String? _error;
   int _requestId = 0;
   bool _mapReady = false;
+  bool _initialFitDone = false;
+  Size? _searchedMapSize; // map size of the last search; a new size shows a different area
   Timer? _reloadDebounce;
   String? _selectedId;
   bool _sheetExpanded = false;
@@ -167,10 +177,40 @@ class _MapHomePageState extends State<MapHomePage> {
     _searchController.dispose();
     _sheetController.dispose();
     _mapController.dispose();
+    _reloadTiles.close();
     super.dispose();
   }
 
   // --- searching
+
+  /// Phones and browsers may report a zero-sized screen for the first frame(s): a camera
+  /// without a real size has no meaningful visible area to search or fit.
+  bool get _mapHasSize {
+    final size = _mapController.camera.nonRotatedSize;
+    return size.width > 0 && size.height > 0 && size.isFinite;
+  }
+
+  void _fitPoland() {
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: polandBounds,
+        padding: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  /// Once, as soon as the map knows its size: initialCameraFit isn't applied yet when the map
+  /// is ready, so without this the first search would use flutter_map's default camera (Kyiv).
+  void _fitInitialCamera() {
+    if (_initialFitDone || !_mapHasSize) return;
+    _initialFitDone = true;
+    _fitPoland();
+    // flutter_map loads tiles only on map events, which at start may carry an older camera:
+    // the tiles of the final view would stay blank until the user moved the map.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reloadTiles.add(null);
+    });
+  }
 
   GeoBounds? _visibleBounds() {
     final b = _mapController.camera.visibleBounds;
@@ -254,8 +294,9 @@ class _MapHomePageState extends State<MapHomePage> {
   }
 
   Future<void> _reload() async {
-    if (!_mapReady) return;
+    if (!_mapReady || !_mapHasSize) return;
     _reloadDebounce?.cancel();
+    _searchedMapSize = _mapController.camera.nonRotatedSize;
     final id = ++_requestId;
     setState(() {
       _loading = true;
@@ -323,12 +364,7 @@ class _MapHomePageState extends State<MapHomePage> {
     final bounds = choice.bounds;
     final point = choice.point;
     if (point == null) {
-      _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: polandBounds,
-          padding: const EdgeInsets.all(16),
-        ),
-      );
+      _fitPoland();
     } else if (bounds != null) {
       _mapController.fitCamera(
         CameraFit.bounds(
@@ -870,16 +906,18 @@ class _MapHomePageState extends State<MapHomePage> {
           flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
         ),
         onMapReady: () {
-          // initialCameraFit isn't applied yet at this point: without this the first search
-          // would use flutter_map's default camera (Kyiv).
-          _mapController.fitCamera(
-            CameraFit.bounds(
-              bounds: polandBounds,
-              padding: const EdgeInsets.all(16),
-            ),
-          );
           _mapReady = true;
-          _reload();
+          _fitInitialCamera();
+          _reload(); // waits for onMapEvent below if the size isn't known yet
+        },
+        onMapEvent: (MapEvent event) {
+          // The real size arrived after start (or the window was resized / rotated):
+          // the visible area changed without any gesture, so search it.
+          if (event is! MapEventNonRotatedSizeChange || !_mapReady) return;
+          _fitInitialCamera();
+          if (_mapController.camera.nonRotatedSize != _searchedMapSize) {
+            _reloadSoon(const Duration(milliseconds: 150));
+          }
         },
         onPositionChanged: (MapCamera camera, bool hasGesture) {
           if (hasGesture) _reloadSoon();
@@ -894,6 +932,8 @@ class _MapHomePageState extends State<MapHomePage> {
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             userAgentPackageName: 'pl.hackyeah.miejscowki',
             maxZoom: 19,
+            tileProvider: widget.tileProvider,
+            reset: _reloadTiles.stream,
           ),
         if (point != null)
           MarkerLayer(
