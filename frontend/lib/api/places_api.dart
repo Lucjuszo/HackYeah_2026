@@ -132,6 +132,15 @@ class PlacesApi {
         ..headers['Content-Type'] = 'application/json'
         ..body = jsonEncode(body);
     }
+    return _sendRequest(request, token: token);
+  }
+
+  Future<Object?> _sendRequest(
+    http.BaseRequest request, {
+    required String token,
+    Duration timeout = timeout,
+  }) async {
+    request.headers['Authorization'] = 'Bearer $token';
     final http.Response response;
     try {
       response = await http.Response.fromStream(
@@ -160,6 +169,9 @@ class PlacesApi {
       return 'Za dużo zmian w krótkim czasie. Spróbuj za chwilę.';
     if (response.statusCode == 403) return 'Nie masz uprawnień do tej zmiany.';
     if (response.statusCode == 404) return 'Nie znaleziono.';
+    if (response.statusCode == 413) return 'Zdjęcie jest za duże (max 10 MB).';
+    if (response.statusCode == 415)
+      return 'Ten plik nie jest obsługiwanym zdjęciem.';
     if (response.statusCode >= 500) {
       return 'Serwer ma chwilowy problem. Spróbuj za moment.';
     }
@@ -339,6 +351,53 @@ class PlacesApi {
       body: place.toJson(),
     );
     return Place.fromJson(body! as Json, apiUrl: apiUrl);
+  }
+
+  /// POST /places/{id}/photos (logged in, multipart). The API converts it to WebP and makes a thumbnail.
+  Future<Photo> uploadPhoto(
+    String placeId,
+    List<int> bytes, {
+    required String filename,
+    required String token,
+  }) async {
+    final request =
+        http.MultipartRequest(
+            'POST',
+            apiUrl.resolve('${_placePath(placeId)}/photos'),
+          )
+          ..files.add(
+            http.MultipartFile.fromBytes('file', bytes, filename: filename),
+          );
+    try {
+      // Phone photos on mobile data take a while; the server re-encodes them too.
+      final body = await _sendRequest(
+        request,
+        token: token,
+        timeout: const Duration(seconds: 90),
+      );
+      return Photo.fromJson(body! as Json, apiUrl: apiUrl);
+    } on ApiException catch (e) {
+      if (e.statusCode == 409) {
+        throw const ApiException(
+          'To miejsce ma już maksymalną liczbę zdjęć.',
+          statusCode: 409,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// The uploader or an admin only.
+  Future<void> deletePhoto(
+    String placeId,
+    String photoId, {
+    required String token,
+  }) async {
+    await _send(
+      'DELETE',
+      '${_placePath(placeId)}/photos/${Uri.encodeComponent(photoId)}',
+      token: token,
+    );
   }
 
   Future<List<GeocodeResult>> geocode(String text) async {

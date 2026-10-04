@@ -1,5 +1,6 @@
 import os
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import unquote, urlsplit
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -43,9 +44,18 @@ class Settings(BaseSettings):
     geocoding_user_agent: str = "HackYeah2026-Miejscowki/1.0 (+https://github.com/Lucjuszo/HackYeah_2026)"
     geocoding_countries: str = "pl"  # comma-separated ISO codes; empty = whole world
 
-    # --- Photos (app/storage.py): local disk, served under media_base_url
+    # --- Photos (app/storage.py): Cloudinary when configured, otherwise local disk served under media_base_url.
+    # "auto" picks Cloudinary as soon as its credentials are set; "local" forces the disk even then.
+    storage_backend: Literal["auto", "local", "cloudinary"] = "auto"
     media_dir: str = "media"
     media_base_url: str = "/media"
+    # Cloudinary: either CLOUDINARY_URL (cloudinary://<api_key>:<api_secret>@<cloud_name>, from the dashboard)
+    # or the three separate variables. Photos go to <cloudinary_folder>/places/<place_id>/ in the account.
+    cloudinary_url: SecretStr | None = None
+    cloudinary_cloud_name: str | None = None
+    cloudinary_api_key: str | None = None
+    cloudinary_api_secret: SecretStr | None = None
+    cloudinary_folder: str = "focusmap"
     max_photo_bytes: int = 10 * 1024 * 1024  # upload size, before processing
     max_photo_dimension: int = 1600  # longer side of the full version
     thumbnail_dimension: int = 400  # longer side of the thumbnail
@@ -92,6 +102,20 @@ class Settings(BaseSettings):
     def media_url_prefix(self) -> str:
         base = self.public_base_url.rstrip("/") if self.public_base_url else ""
         return base + "/" + self.media_base_url.strip("/")
+
+    def cloudinary_credentials(self) -> tuple[str, str, str] | None:
+        """(cloud_name, api_key, api_secret); None if Cloudinary isn't configured. CLOUDINARY_URL wins."""
+        if self.cloudinary_url is not None:
+            url = urlsplit(self.cloudinary_url.get_secret_value())
+            if url.scheme != "cloudinary" or not (url.hostname and url.username and url.password):
+                raise ValueError("CLOUDINARY_URL must look like cloudinary://<api_key>:<api_secret>@<cloud_name>")
+            return url.hostname, unquote(url.username), unquote(url.password)
+        parts = (self.cloudinary_cloud_name, self.cloudinary_api_key, self.cloudinary_api_secret)
+        if not any(parts):
+            return None
+        if not all(parts):
+            raise ValueError("Set all of CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET")
+        return self.cloudinary_cloud_name, self.cloudinary_api_key, self.cloudinary_api_secret.get_secret_value()
 
     def admin_email_set(self) -> set[str]:
         return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}

@@ -232,6 +232,7 @@ class Photo {
     required this.full,
     required this.createdAt,
     this.thumbnail,
+    this.uploadedBy,
     this.uploadedByName,
   });
 
@@ -241,6 +242,7 @@ class Photo {
     thumbnail: json['thumbnail'] == null
         ? null
         : PhotoVariant.fromJson(json['thumbnail'] as Json, apiUrl: apiUrl),
+    uploadedBy: json['uploaded_by'] as String?,
     uploadedByName: json['uploaded_by_name'] as String?,
     createdAt: _date(json['created_at'])!,
   );
@@ -248,6 +250,7 @@ class Photo {
   final String id;
   final PhotoVariant full;
   final PhotoVariant? thumbnail;
+  final String? uploadedBy;
   final String? uploadedByName;
   final DateTime createdAt;
 
@@ -430,6 +433,9 @@ class CurrentUser {
 
   /// Authors edit and delete their own comments, admins any.
   bool canModify(Comment comment) => isAdmin || comment.userId == id;
+
+  /// Uploaders delete their own photos, admins any.
+  bool canDeletePhoto(Photo photo) => isAdmin || photo.uploadedBy == id;
 }
 
 /// A city / address from GET /geocode.
