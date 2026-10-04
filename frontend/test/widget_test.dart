@@ -660,7 +660,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Spokojnie'));
       await tester.tap(find.text('Spokojnie'));
-      await tester.tap(find.text('0–20 zł'));
+      await tester.tap(find.text('0–30 zł'));
       await chooseHours(tester, 'hours-always');
       expect(find.text('Całą dobę'), findsOneWidget);
       await submit(tester);
@@ -693,7 +693,7 @@ void main() {
       expect(find.text('Udogodnienia'), findsOneWidget);
     });
 
-    displayTest('własne godziny: Pon–Pt i Sob–Nd', (tester) async {
+    displayTest('własne godziny: te same codziennie', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openForm(tester);
       await tester.enterText(
@@ -702,14 +702,27 @@ void main() {
       );
       await chooseHours(tester, 'hours-custom');
       expect(find.text('8:00–20:00'), findsOneWidget);
-      expect(find.text('08:00'), findsOneWidget); // editable "Od"
+      await tester.enterText(find.byKey(const ValueKey<String>('hours-open')), '09:30');
+      await tester.enterText(find.byKey(const ValueKey<String>('hours-close')), '17:00');
+      await tester.pumpAndSettle();
+      expect(find.text('9:30–17:00'), findsOneWidget);
       await submit(tester);
 
+      // What the form shows is what is sent: the same hours every day, weekend too.
       final hours = backend.created.single['opening_hours'] as Map;
       final periods = (hours['periods'] as List).cast<Map>();
-      expect(periods, hasLength(7));
-      expect(periods.first, {'day': 0, 'open': '08:00', 'close': '20:00'});
-      expect(periods.last, {'day': 6, 'open': '10:00', 'close': '18:00'});
+      expect(periods, [
+        for (var day = 0; day < 7; day++) {'day': day, 'open': '09:30', 'close': '17:00'},
+      ]);
+    });
+
+    displayTest('godziny „Nie wiem” nie pokazują wymyślonych godzin', (tester) async {
+      final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
+      await openForm(tester);
+      expect(find.text('Nie wiem'), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey<String>('new-place-name')), 'Czytelnia');
+      await submit(tester);
+      expect(backend.created.single.containsKey('opening_hours'), isFalse);
     });
 
     displayTest('bez nazwy nie wysyła', (tester) async {

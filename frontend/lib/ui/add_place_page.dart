@@ -88,9 +88,9 @@ class _AddPlacePageState extends State<AddPlacePage> {
     ('computer_access', 'Komputery', Icons.computer_rounded),
   ];
   static const List<(String, String)> _prices = [
-    ('0-30', '0–20 zł'),
-    ('30-60', '20–40 zł'),
-    ('60+', '40–60 zł'),
+    ('0-30', '0–30 zł'),
+    ('30-60', '30–60 zł'),
+    ('60+', '60+ zł'),
   ];
   static const List<String> _categories = <String>[
     'Kawiarnia',
@@ -122,16 +122,12 @@ class _AddPlacePageState extends State<AddPlacePage> {
   Atmosphere? _atmosphere;
   String? _price;
   _HoursMode _hoursMode = _HoursMode.unknown;
+  // "Ustal godziny" edits one pair of times: the same hours every day of the week.
   final List<_DayGroupHours> _hours = <_DayGroupHours>[
     _DayGroupHours(
-      <int>[0, 1, 2, 3, 4],
+      <int>[0, 1, 2, 3, 4, 5, 6],
       const TimeOfDay(hour: 8, minute: 0),
       const TimeOfDay(hour: 20, minute: 0),
-    ),
-    _DayGroupHours(
-      <int>[5, 6],
-      const TimeOfDay(hour: 10, minute: 0),
-      const TimeOfDay(hour: 18, minute: 0),
     ),
   ];
 
@@ -235,16 +231,6 @@ class _AddPlacePageState extends State<AddPlacePage> {
     } on LocationFailure catch (e) {
       if (mounted) setState(() => _addressError = e.message);
     }
-  }
-
-  Future<void> _pickTime(_DayGroupHours group, {required bool opening}) async {
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: opening ? group.open : group.close,
-      helpText: opening ? 'Otwarcie' : 'Zamknięcie',
-    );
-    if (picked == null || !mounted) return;
-    setState(() => opening ? group.open = picked : group.close = picked);
   }
 
   // --- saving
@@ -599,7 +585,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
   );
 
   String get _hoursLabel => switch (_hoursMode) {
-    _HoursMode.unknown => '9:00–16:00',
+    _HoursMode.unknown => 'Nie wiem',
     _HoursMode.alwaysOpen => 'Całą dobę',
     _HoursMode.custom =>
       '${_label(_hours.first.open)}–${_label(_hours.first.close)}',
@@ -748,46 +734,6 @@ class _AddPlacePageState extends State<AddPlacePage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _hoursRow(String label, _DayGroupHours group) {
-    Widget time(TimeOfDay value, bool opening) => OutlinedButton(
-      onPressed: group.isOpen ? () => _pickTime(group, opening: opening) : null,
-      style: OutlinedButton.styleFrom(
-        visualDensity: VisualDensity.compact,
-        foregroundColor: AppColors.ink,
-        side: const BorderSide(color: AppColors.divider),
-      ),
-      child: Text(_label(value)),
-    );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: <Widget>[
-          SizedBox(
-            width: 64,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          Switch(
-            value: group.isOpen,
-            onChanged: (bool v) => setState(() => group.isOpen = v),
-          ),
-          const SizedBox(width: 6),
-          if (group.isOpen) ...<Widget>[
-            time(group.open, true),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 6),
-              child: Text('–'),
-            ),
-            time(group.close, false),
-          ] else
-            const Text('Zamknięte', style: TextStyle(color: AppColors.muted)),
-        ],
       ),
     );
   }

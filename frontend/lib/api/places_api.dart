@@ -154,10 +154,12 @@ class PlacesApi {
   }
 
   static String _errorMessage(http.Response response) {
-    if (response.statusCode == 401)
+    if (response.statusCode == 401) {
       return 'Sesja wygasła. Zaloguj się ponownie.';
-    if (response.statusCode == 429)
+    }
+    if (response.statusCode == 429) {
       return 'Za dużo zmian w krótkim czasie. Spróbuj za chwilę.';
+    }
     if (response.statusCode == 403) return 'Nie masz uprawnień do tej zmiany.';
     if (response.statusCode == 404) return 'Nie znaleziono.';
     if (response.statusCode >= 500) {
@@ -284,7 +286,7 @@ class PlacesApi {
       'POST',
       '${_placePath(placeId)}/comments',
       token: token,
-      body: <String, Object?>{'text': text, if (score != null) 'score': score},
+      body: <String, Object?>{'text': text, 'score': ?score},
     );
     return Comment.fromJson(body! as Json);
   }
