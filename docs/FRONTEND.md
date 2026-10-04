@@ -56,6 +56,8 @@ Konfiguracja klienta Google (Cloud Console, redirect URI `http://localhost:8000/
   podsumowanie (`summary`), które front od razu pokazuje.
 - **Opinie**: `POST /places/{id}/comments` (pole „Napisz opinię…”), `PATCH` / `DELETE .../comments/{id}` z menu
   ⋮ przy własnych opiniach (admin: przy wszystkich).
+- **Łapki w górę**: `PUT` / `DELETE /places/{id}/comments/{id}/like` (jedna na użytkownika, bez łapek w dół).
+  `GET .../comments` zwraca najpierw opinie z największą liczbą łapek (`likes`, `liked_by`), potem najnowsze.
 
 ## Miejsca
 

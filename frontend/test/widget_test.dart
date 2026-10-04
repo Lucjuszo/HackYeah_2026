@@ -394,6 +394,18 @@ void main() {
       expect(backend.commentsOf('p1'), hasLength(3));
     });
 
+    displayTest('łapka w górę dodaje i cofa polubienie', (tester) async {
+      final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
+      await openPlace(tester);
+      await tapKey(tester, 'comment-like-c1');
+      expect(backend.commentsOf('p1')[1]['liked_by'], hasLength(1));
+      expect(find.text('1'), findsOneWidget);
+
+      await tapKey(tester, 'comment-like-c1');
+      expect(backend.commentsOf('p1')[1]['liked_by'], isEmpty);
+      expect(find.text('1'), findsNothing);
+    });
+
     displayTest('niezalogowany: opinia czeka na logowanie i zapisuje się po nim', (tester) async {
       final auth = TestAuth();
       final backend = await pumpApp(tester, auth: auth);

@@ -54,6 +54,24 @@ async def update_comment(
         raise _forbidden()
 
 
+@router.put("/{comment_id}/like")
+async def like_comment(place_id: ExistingPlaceId, comment_id: str, db: Db, user: CurrentUser) -> Comment:
+    """Thumbs up from the current user (once per user; repeating it changes nothing)."""
+    try:
+        return await repo.set_like(db, place_id, comment_id, user.id, liked=True)
+    except repo.CommentNotFound:
+        raise _not_found()
+
+
+@router.delete("/{comment_id}/like")
+async def unlike_comment(place_id: ExistingPlaceId, comment_id: str, db: Db, user: CurrentUser) -> Comment:
+    """Takes the current user's thumbs up back."""
+    try:
+        return await repo.set_like(db, place_id, comment_id, user.id, liked=False)
+    except repo.CommentNotFound:
+        raise _not_found()
+
+
 @router.delete("/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_comment(place_id: ExistingPlaceId, comment_id: str, db: Db, user: CurrentUser) -> None:
     """Author or admin only."""

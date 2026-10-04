@@ -388,6 +388,7 @@ class Comment {
     this.userId,
     this.userName,
     this.editedAt,
+    this.likedBy = const <String>[],
   });
 
   factory Comment.fromJson(Json json) => Comment(
@@ -397,6 +398,7 @@ class Comment {
     userName: json['user_name'] as String?,
     createdAt: _date(json['created_at'])!,
     editedAt: _date(json['edited_at']),
+    likedBy: [for (final id in (json['liked_by'] as List? ?? const [])) id as String],
   );
 
   final String id;
@@ -405,6 +407,13 @@ class Comment {
   final String? userName;
   final DateTime createdAt;
   final DateTime? editedAt;
+
+  /// Users who gave a thumbs up (the API lists the most liked comments first).
+  final List<String> likedBy;
+
+  int get likes => likedBy.length;
+
+  bool isLikedBy(String? userId) => userId != null && likedBy.contains(userId);
 }
 
 /// The logged-in user (GET /auth/me).

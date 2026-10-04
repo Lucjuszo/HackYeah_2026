@@ -251,6 +251,16 @@ class PlacesApi {
     return Comment.fromJson(body! as Json);
   }
 
+  /// Gives ([liked]) or takes back the user's thumbs up; returns the updated comment.
+  Future<Comment> likeComment(String placeId, String commentId, {required bool liked, required String token}) async {
+    final body = await _send(
+      liked ? 'PUT' : 'DELETE',
+      '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}/like',
+      token: token,
+    );
+    return Comment.fromJson(body! as Json);
+  }
+
   Future<void> deleteComment(String placeId, String commentId, {required String token}) async {
     await _send('DELETE', '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}', token: token);
   }

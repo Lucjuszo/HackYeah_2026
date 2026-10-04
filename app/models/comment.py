@@ -24,3 +24,5 @@ class Comment(BaseModel):
     created_at: datetime
     edited_at: datetime | None = None
     edited_by: str | None = Field(None, description="Set when edited; differs from user_id when an admin edited it")
+    likes: int = Field(0, description="Number of thumbs up; lists show the most liked first")
+    liked_by: list[str] = Field(default_factory=list, description="Ids of the users who gave a thumbs up")

@@ -245,6 +245,12 @@ class FakeBackend {
       }
       final i = list.indexWhere((c) => c['id'] == path[3]);
       if (i < 0) return _error(404, 'Comment not found');
+      if (path.length == 5 && path[4] == 'like') {
+        final likedBy = [...(list[i]['liked_by'] as List? ?? const []).where((id) => id != me['id'])];
+        if (method == 'PUT') likedBy.add(me['id']);
+        list[i] = {...list[i], 'liked_by': likedBy, 'likes': likedBy.length};
+        return _json(list[i]);
+      }
       if (list[i]['user_id'] != me['id']) return _error(403, 'Only the author or an admin can change this comment');
       if (method == 'PATCH') {
         list[i] = {...list[i], 'text': body()['text'], 'edited_at': DateTime.now().toUtc().toIso8601String()};
