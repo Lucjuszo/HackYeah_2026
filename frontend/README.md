@@ -1,7 +1,7 @@
-# Miejscówki – frontend (Flutter)
+# Focus Map – frontend (Flutter)
 
 Mapa miejscówek w całej Polsce: mapa OpenStreetMap (`flutter_map`), lista i szczegóły miejsc z backendu
-(`app/`), filtry, wyszukiwanie miasta/adresu i „Moja lokalizacja”. Na razie tylko odczyt – bez logowania.
+(`app/`), filtry, wyszukiwanie miasta/adresu i „Moja lokalizacja”. Dodawanie miejsca (przycisk +) loguje przez Google.
 
 ```bash
 # backend (katalog główny repo)

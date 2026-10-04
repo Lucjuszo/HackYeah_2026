@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 
 import 'api/models.dart';
 import 'api/places_api.dart';
+import 'auth/auth.dart';
 import 'services/location_service.dart';
 import 'ui/add_place_page.dart';
 import 'ui/format.dart' as fmt;
@@ -15,17 +16,27 @@ import 'ui/place_details_page.dart';
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
 
-void main() => runApp(MiejscowkiApp(api: PlacesApi()));
+void main() {
+  final api = PlacesApi();
+  runApp(
+    MiejscowkiApp(
+      api: api,
+      auth: AuthController(api: api),
+    ),
+  );
+}
 
 class MiejscowkiApp extends StatelessWidget {
   const MiejscowkiApp({
     required this.api,
+    required this.auth,
     this.locationService = const GeolocatorLocationService(),
     this.showMapTiles = true,
     super.key,
   });
 
   final PlacesApi api;
+  final AuthController auth;
   final LocationService locationService;
 
   /// Off in widget tests: tiles come from tile.openstreetmap.org.
@@ -39,6 +50,7 @@ class MiejscowkiApp extends StatelessWidget {
       theme: buildTheme(),
       home: MapHomePage(
         api: api,
+        auth: auth,
         locationService: locationService,
         showMapTiles: showMapTiles,
       ),
@@ -94,12 +106,14 @@ enum _RadiusFilter {
 class MapHomePage extends StatefulWidget {
   const MapHomePage({
     required this.api,
+    required this.auth,
     required this.locationService,
     this.showMapTiles = true,
     super.key,
   });
 
   final PlacesApi api;
+  final AuthController auth;
   final LocationService locationService;
   final bool showMapTiles;
 
@@ -140,6 +154,12 @@ class _MapHomePageState extends State<MapHomePage> {
   Timer? _reloadDebounce;
   String? _selectedId;
   bool _sheetExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.auth.restore();
+  }
 
   @override
   void dispose() {
@@ -284,21 +304,19 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
-  void _openDetails(PlaceSummary place) {
-    Navigator.of(context).push(
+  Future<void> _openDetails(PlaceSummary place) async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PlaceDetailsPage(
           api: widget.api,
+          auth: widget.auth,
           summary: place,
           distanceM: _distanceTo(place),
         ),
       ),
     );
-  }
-
-  void _openAddPlace() {
-    Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => const AddPlacePage()));
+    // Ratings may have changed there.
+    if (mounted) _reload();
   }
 
   void _showLocation(LocationChoice choice) {
@@ -364,6 +382,45 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
+  // --- adding a place
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// "+": the form starts where the user is ("Moja lokalizacja") or at the centre of the map.
+  Future<void> _openAddPlace() async {
+    final camera = _mapController.camera;
+    final point = _location.point;
+    final start = _location.isDevice && point != null
+        ? point
+        : LatLon(camera.center.latitude, camera.center.longitude);
+    final place = await Navigator.of(context).push<Place>(
+      MaterialPageRoute<Place>(
+        builder: (_) => AddPlacePage(
+          api: widget.api,
+          auth: widget.auth,
+          locationService: widget.locationService,
+          initialCenter: start,
+          // Zoomed out over the whole country the pin would be meaningless: start closer.
+          initialZoom: math.max(camera.zoom, 15),
+          showMapTiles: widget.showMapTiles,
+        ),
+      ),
+    );
+    if (place == null || !mounted) return;
+    _toast('Dodano: ${place.name}');
+    _mapController.move(
+      LatLng(place.location.lat, place.location.lon),
+      math.max(camera.zoom, 16),
+    );
+    await _reload();
+    if (mounted) _openDetails(PlaceSummary.fromPlace(place));
+  }
+
   // --- header & filters
 
   void _showOptions<T>({
@@ -375,7 +432,7 @@ class _MapHomePageState extends State<MapHomePage> {
   }) {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       showDragHandle: true,
       builder: (BuildContext sheetContext) => SafeArea(
         child: Padding(
@@ -1021,7 +1078,8 @@ class _MapHomePageState extends State<MapHomePage> {
                 children: <Widget>[
                   ListView(
                     controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 40),
+                    cacheExtent: 1600,
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 92),
                     children: <Widget>[
                       const SizedBox(height: 22),
                       Row(
@@ -1042,21 +1100,6 @@ class _MapHomePageState extends State<MapHomePage> {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                          IconButton(
-                            key: const ValueKey<String>('add-place'),
-                            tooltip: 'Dodaj miejsce',
-                            onPressed: _openAddPlace,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 48,
-                              height: 48,
-                            ),
-                            style: IconButton.styleFrom(
-                              backgroundColor: AppColors.accent,
-                              foregroundColor: AppColors.ink,
-                            ),
-                            icon: const Icon(Icons.add_rounded, size: 28),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 7),
@@ -1068,8 +1111,10 @@ class _MapHomePageState extends State<MapHomePage> {
                           color: AppColors.muted,
                         ),
                       ),
-                      const SizedBox(height: 18),
-                      _listContent(),
+                      if (_sheetExpanded) ...<Widget>[
+                        const SizedBox(height: 18),
+                        _listContent(),
+                      ],
                     ],
                   ),
                   Positioned(
@@ -1099,6 +1144,23 @@ class _MapHomePageState extends State<MapHomePage> {
                             color: const Color(0xFFB8B8B8),
                             borderRadius: BorderRadius.circular(8),
                           ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 16,
+                    bottom: 16,
+                    child: Material(
+                      color: AppColors.accent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        key: const ValueKey<String>('add-place'),
+                        customBorder: const CircleBorder(),
+                        onTap: _openAddPlace,
+                        child: const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: Icon(Icons.add_rounded, size: 25),
                         ),
                       ),
                     ),

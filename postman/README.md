@@ -1,6 +1,6 @@
 # Kolekcja Postmana
 
-`HackYeah.postman_collection.json` – 72 zapytania z testami, ułożone w scenariusz:
+`HackYeah.postman_collection.json` – 75 zapytań z testami, ułożone w scenariusz:
 
 | Folder | Co robi |
 |---|---|

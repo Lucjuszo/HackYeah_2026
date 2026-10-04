@@ -1,226 +1,505 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+import '../api/models.dart';
+import '../api/places_api.dart';
+import '../auth/auth.dart';
+import '../services/location_service.dart';
+import 'login_sheet.dart';
 import 'theme.dart';
 
-/// Visual form for adding a new place.
-///
-/// The current public API is read-only, so this screen intentionally keeps the
-/// entered values local. It gives the UI a complete, ready-to-connect form
-/// without changing the existing place-reading flow.
+enum _HoursMode { unknown, alwaysOpen, custom }
+
+/// Opening hours for a group of days (Mon–Fri or Sat–Sun).
+class _DayGroupHours {
+  _DayGroupHours(this.days, this.open, this.close);
+
+  final List<int> days;
+  bool isOpen = true;
+  TimeOfDay open;
+  TimeOfDay close;
+}
+
+String _hhmm(TimeOfDay t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+String _label(TimeOfDay t) =>
+    '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
+
+/// Periods for the backend: closing after midnight is split at 24:00 (e.g. Fri 20:00–02:00
+/// becomes Fri 20:00–24:00 + Sat 00:00–02:00), like the backend stores overnight hours.
+List<OpeningPeriod> _periods(List<_DayGroupHours> groups) {
+  final periods = <OpeningPeriod>[];
+  for (final group in groups.where((g) => g.isOpen)) {
+    final open = _hhmm(group.open);
+    final close = _hhmm(group.close);
+    for (final day in group.days) {
+      if (close == '00:00') {
+        periods.add(OpeningPeriod(day, open, '24:00'));
+      } else if (close.compareTo(open) > 0) {
+        periods.add(OpeningPeriod(day, open, close));
+      } else {
+        periods.add(OpeningPeriod(day, open, '24:00'));
+        periods.add(OpeningPeriod((day + 1) % 7, '00:00', close));
+      }
+    }
+  }
+  return periods;
+}
+
+/// "Dodaj miejscówkę": name, a pin on the map (address filled in automatically) and the basics.
+/// Pops with the created [Place].
 class AddPlacePage extends StatefulWidget {
-  const AddPlacePage({super.key});
+  const AddPlacePage({
+    required this.api,
+    required this.auth,
+    required this.locationService,
+    required this.initialCenter,
+    this.initialZoom = 16,
+    this.showMapTiles = true,
+    super.key,
+  });
+
+  final PlacesApi api;
+  final AuthController auth;
+  final LocationService locationService;
+  final LatLon initialCenter;
+  final double initialZoom;
+  final bool showMapTiles;
 
   @override
   State<AddPlacePage> createState() => _AddPlacePageState();
 }
 
 class _AddPlacePageState extends State<AddPlacePage> {
-  final _nameController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _descriptionController = TextEditingController();
+  static const List<(String, String, IconData)> _amenities = [
+    ('wifi', 'Wi-Fi', Icons.wifi_rounded),
+    ('power_outlets', 'Gniazdka', Icons.power_rounded),
+    ('food', 'Jedzenie', Icons.restaurant_rounded),
+    ('toilet', 'Toaleta', Icons.wc_rounded),
+    ('wheelchair_accessible', 'Dla wózków', Icons.accessible_rounded),
+    ('air_conditioning', 'Klimatyzacja', Icons.ac_unit_rounded),
+    ('computer_access', 'Komputery', Icons.computer_rounded),
+  ];
+  static const List<(String, String)> _prices = [
+    ('za darmo', 'Bezpłatnie'),
+    ('0-30', 'Do 30 zł'),
+    ('30-60', '30–60 zł'),
+    ('60+', 'Powyżej 60 zł'),
+  ];
 
-  String _category = 'Kawiarnia';
-  String _hours = 'Godziny otwarcia';
-  String _atmosphere = 'Spokojnie';
-  String _price = '0–20 zł';
-  final Set<String> _amenities = <String>{};
+  final _nameController = TextEditingController();
+  final _addressSearchController = TextEditingController();
+  final _mapController = MapController();
+
+  final Set<String> _selectedAmenities = <String>{};
+  Atmosphere? _atmosphere;
+  String? _price;
+  _HoursMode _hoursMode = _HoursMode.unknown;
+  final List<_DayGroupHours> _hours = <_DayGroupHours>[
+    _DayGroupHours(
+      <int>[0, 1, 2, 3, 4],
+      const TimeOfDay(hour: 8, minute: 0),
+      const TimeOfDay(hour: 20, minute: 0),
+    ),
+    _DayGroupHours(
+      <int>[5, 6],
+      const TimeOfDay(hour: 10, minute: 0),
+      const TimeOfDay(hour: 18, minute: 0),
+    ),
+  ];
+
+  late LatLon _point = widget.initialCenter;
+  ReverseGeocodeResult? _address;
+  LatLon? _addressPoint;
+  bool _addressLoading = false;
+  String? _addressError;
+  int _addressRequest = 0;
+  Timer? _addressDebounce;
+
+  bool _nameMissing = false;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _lookUpAddress();
+  }
 
   @override
   void dispose() {
+    _addressDebounce?.cancel();
     _nameController.dispose();
-    _addressController.dispose();
-    _descriptionController.dispose();
+    _addressSearchController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
-  Future<void> _choose({
-    required String title,
-    required List<String> options,
-    required String value,
-    required ValueChanged<String> onSelected,
-  }) async {
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          children: <Widget>[
-            Text(
-              title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            for (final option in options)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  option == value
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_off_rounded,
-                  color: option == value ? AppColors.primary : AppColors.muted,
-                ),
-                title: Text(option),
-                onTap: () => Navigator.of(context).pop(option),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (selected != null) onSelected(selected);
+  // --- location & address
+
+  Future<void> _lookUpAddress() async {
+    final point = _point;
+    final id = ++_addressRequest;
+    setState(() {
+      _addressLoading = true;
+      _addressError = null;
+    });
+    try {
+      final address = await widget.api.reverseGeocode(point);
+      if (!mounted || id != _addressRequest) return;
+      setState(() {
+        _address = address;
+        _addressPoint = point;
+        _addressLoading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted || id != _addressRequest) return;
+      setState(() {
+        _address = null;
+        _addressLoading = false;
+        _addressError = e.statusCode == 503
+            ? 'Wyszukiwanie adresów chwilowo nie działa.'
+            : e.message;
+      });
+    }
   }
 
-  Widget _label(String text) => Padding(
-    padding: const EdgeInsets.only(left: 2, bottom: 6),
-    child: Text(
-      text,
-      style: const TextStyle(fontSize: 11, color: AppColors.subtle),
+  void _onMapMoved(MapCamera camera, bool hasGesture) {
+    _point = LatLon(camera.center.latitude, camera.center.longitude);
+    _addressDebounce?.cancel();
+    _addressDebounce = Timer(const Duration(milliseconds: 600), _lookUpAddress);
+  }
+
+  void _moveTo(LatLon point, {double zoom = 17}) {
+    _mapController.move(LatLng(point.lat, point.lon), zoom);
+    _point = point;
+    _addressDebounce?.cancel();
+    _lookUpAddress();
+  }
+
+  Future<void> _searchAddress(String text) async {
+    if (text.trim().length < 2) return;
+    try {
+      final results = await widget.api.geocode(text);
+      if (!mounted) return;
+      if (results.isEmpty) {
+        setState(() => _addressError = 'Nie znaleziono takiego adresu.');
+        return;
+      }
+      _moveTo(results.first.location);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _addressError = e.message);
+    }
+  }
+
+  Future<void> _useMyLocation() async {
+    try {
+      _moveTo(await widget.locationService.currentLocation(), zoom: 18);
+    } on LocationFailure catch (e) {
+      if (mounted) setState(() => _addressError = e.message);
+    }
+  }
+
+  Future<void> _pickTime(_DayGroupHours group, {required bool opening}) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: opening ? group.open : group.close,
+      helpText: opening ? 'Otwarcie' : 'Zamknięcie',
+    );
+    if (picked == null || !mounted) return;
+    setState(() => opening ? group.open = picked : group.close = picked);
+  }
+
+  // --- saving
+
+  bool get _addressReady {
+    final address = _address;
+    return !_addressLoading &&
+        address != null &&
+        address.city != null &&
+        address.countryCode != null &&
+        _addressPoint == _point;
+  }
+
+  NewPlace _draft() {
+    final address = _address!;
+    return NewPlace(
+      name: _nameController.text.trim(),
+      location: _point,
+      city: address.city!,
+      countryCode: address.countryCode!,
+      street: address.street,
+      houseNumber: address.houseNumber,
+      postcode: address.postcode,
+      amenities: <String, bool>{
+        for (final key in _selectedAmenities) key: true,
+      },
+      atmosphere: _atmosphere,
+      usagePrice: _price,
+      openingHours: switch (_hoursMode) {
+        _HoursMode.unknown => null,
+        _HoursMode.alwaysOpen => const OpeningHours(alwaysOpen: true),
+        _HoursMode.custom => OpeningHours(periods: _periods(_hours)),
+      },
+    );
+  }
+
+  Future<void> _save() async {
+    final nameMissing = _nameController.text.trim().isEmpty;
+    setState(() {
+      _nameMissing = nameMissing;
+      _error = null;
+    });
+    if (nameMissing) return;
+    if (!_addressReady) {
+      setState(
+        () => _error = _addressLoading
+            ? 'Chwila, ustalam adres…'
+            : 'Ustaw pinezkę w miejscu z adresem (miejscowość).',
+      );
+      return;
+    }
+    final draft = _draft();
+    final token = await requireLogin(
+      context,
+      widget.auth,
+      reason: 'Zaloguj się, żeby dodać miejscówkę.',
+    );
+    if (token == null || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      final place = await widget.api.createPlace(draft, token: token);
+      if (mounted) Navigator.of(context).pop(place);
+    } on ApiException catch (e) {
+      if (e.statusCode == 401) await widget.auth.invalidate();
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  // --- UI
+
+  InputDecoration _fieldDecoration(
+    String hint, {
+    IconData? icon,
+    String? error,
+  }) => InputDecoration(
+    hintText: hint,
+    errorText: error,
+    prefixIcon: icon == null ? null : Icon(icon),
+    filled: true,
+    fillColor: AppColors.formField,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide.none,
     ),
   );
 
-  Widget _textField(
-    TextEditingController controller, {
-    String? hint,
-    int maxLines = 1,
+  Widget _section(String title, Widget child) => Padding(
+    padding: const EdgeInsets.only(top: 22),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.ink,
+          ),
+        ),
+        const SizedBox(height: 10),
+        child,
+      ],
+    ),
+  );
+
+  Widget _chip(
+    String label,
+    bool selected,
+    VoidCallback onTap, {
+    IconData? icon,
+    Key? key,
   }) {
-    return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      textAlignVertical: TextAlignVertical.center,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(fontSize: 12, color: AppColors.muted),
-        filled: true,
-        fillColor: const Color(0xFFF5EEDD),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none,
-        ),
+    return Padding(
+      padding: const EdgeInsets.only(right: 6, bottom: 6),
+      child: FilterChip(
+        key: key,
+        avatar: icon == null
+            ? null
+            : Icon(
+                icon,
+                size: 15,
+                color: selected ? Colors.white : AppColors.ink,
+              ),
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        side: BorderSide.none,
+        backgroundColor: AppColors.chip,
+        selectedColor: AppColors.primary,
+        labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink),
       ),
     );
   }
 
-  Widget _selector({
-    required String label,
-    required String value,
-    required VoidCallback onTap,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _addressLine() {
+    final address = _address;
+    final (IconData icon, String text, Color color) = _addressLoading
+        ? (Icons.more_horiz_rounded, 'Ustalam adres…', AppColors.muted)
+        : _addressError != null
+        ? (Icons.error_outline_rounded, _addressError!, AppColors.closed)
+        : address == null || address.city == null
+        ? (
+            Icons.wrong_location_outlined,
+            'Tu nie ma adresu – przesuń pinezkę na miejscowość.',
+            AppColors.closed,
+          )
+        : (
+            Icons.location_on_outlined,
+            Address(
+              city: address.city!,
+              street: address.street,
+              houseNumber: address.houseNumber,
+            ).short,
+            AppColors.ink,
+          );
+    return Row(
+      key: const ValueKey<String>('new-place-address'),
       children: <Widget>[
-        _label(label),
-        Material(
-          color: const Color(0xFFF5EEDD),
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(10),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(value, style: const TextStyle(fontSize: 12)),
-                  ),
-                  const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    size: 18,
-                    color: AppColors.subtle,
-                  ),
-                ],
-              ),
-            ),
-          ),
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(text, style: TextStyle(fontSize: 13, color: color)),
         ),
       ],
     );
   }
 
-  Widget _choiceRow(
-    String title,
-    List<String> options,
-    String selected,
-    ValueChanged<String> onSelected,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        _label(title),
-        Row(
+  Widget _map() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: SizedBox(
+        height: 220,
+        child: Stack(
           children: <Widget>[
-            for (final option in options)
-              Expanded(
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: LatLng(
+                  widget.initialCenter.lat,
+                  widget.initialCenter.lon,
+                ),
+                initialZoom: widget.initialZoom,
+                minZoom: 4,
+                maxZoom: 19,
+                backgroundColor: const Color(0xFFF2EFE9),
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                ),
+                onPositionChanged: _onMapMoved,
+              ),
+              children: <Widget>[
+                if (widget.showMapTiles)
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'pl.hackyeah.miejscowki',
+                    maxZoom: 19,
+                  ),
+                SimpleAttributionWidget(
+                  source: const Text('OpenStreetMap contributors'),
+                  alignment: Alignment.topRight,
+                  backgroundColor: Colors.white.withValues(alpha: 0.75),
+                ),
+              ],
+            ),
+            // The pin stays in the middle; the map moves under it.
+            const IgnorePointer(
+              child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: Material(
-                    color: selected == option
-                        ? AppColors.accent
-                        : const Color(0xFFF5EEDD),
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      onTap: () => onSelected(option),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 11),
-                        child: Text(
-                          option,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      ),
+                  padding: EdgeInsets.only(bottom: 34),
+                  child: Icon(
+                    Icons.location_on,
+                    size: 40,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              right: 10,
+              bottom: 10,
+              child: Material(
+                color: Colors.white,
+                elevation: 2,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  key: const ValueKey<String>('new-place-my-location'),
+                  customBorder: const CircleBorder(),
+                  onTap: _useMyLocation,
+                  child: const Tooltip(
+                    message: 'Moja lokalizacja',
+                    child: Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Icon(Icons.my_location_rounded, size: 20),
                     ),
                   ),
                 ),
               ),
+            ),
           ],
-        ),
-      ],
-    );
-  }
-
-  Widget _amenity(String label) {
-    final selected = _amenities.contains(label);
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() {
-          if (selected) {
-            _amenities.remove(label);
-          } else {
-            _amenities.add(label);
-          }
-        }),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                selected
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                size: 17,
-                color: selected ? AppColors.open : AppColors.primary,
-              ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(label, style: const TextStyle(fontSize: 11)),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 
-  void _submit() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Formularz jest gotowy do zapisania.')),
+  Widget _hoursRow(String label, _DayGroupHours group) {
+    Widget time(TimeOfDay value, bool opening) => OutlinedButton(
+      onPressed: group.isOpen ? () => _pickTime(group, opening: opening) : null,
+      style: OutlinedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        foregroundColor: AppColors.ink,
+        side: const BorderSide(color: AppColors.divider),
+      ),
+      child: Text(_label(value)),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 64,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Switch(
+            value: group.isOpen,
+            onChanged: (bool v) => setState(() => group.isOpen = v),
+          ),
+          const SizedBox(width: 6),
+          if (group.isOpen) ...<Widget>[
+            time(group.open, true),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6),
+              child: Text('–'),
+            ),
+            time(group.close, false),
+          ] else
+            const Text('Zamknięte', style: TextStyle(color: AppColors.muted)),
+        ],
+      ),
     );
   }
 
@@ -233,224 +512,236 @@ class _AddPlacePageState extends State<AddPlacePage> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          key: const ValueKey<String>('add-place-back'),
+          tooltip: 'Wróć',
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text(
-          'Dodaj miejsce',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+          'Dodaj miejscówkę',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(13, 4, 13, 30),
-        children: <Widget>[
-          Material(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-            child: InkWell(
-              onTap: () {},
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                height: 106,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: const Color(0xFFE8DCC5),
-                    width: 1.2,
-                  ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            children: <Widget>[
+              Material(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  key: const ValueKey<String>('new-place-photos'),
                   borderRadius: BorderRadius.circular(14),
+                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Zdjęcia można dodać po utworzeniu miejscówki.',
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    height: 106,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFFE8DCC5)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        const Icon(
+                          Icons.image_outlined,
+                          size: 30,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 13,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          child: const Text(
+                            'Dodaj zdjęcia',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                key: const ValueKey<String>('new-place-name'),
+                controller: _nameController,
+                autofocus: true,
+                textInputAction: TextInputAction.next,
+                onChanged: (_) {
+                  if (_nameMissing) setState(() => _nameMissing = false);
+                },
+                decoration: _fieldDecoration(
+                  'Nazwa miejscówki',
+                  error: _nameMissing ? 'Podaj nazwę' : null,
+                ),
+              ),
+              _section(
+                'Gdzie to jest?',
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Icon(
-                      Icons.image_outlined,
-                      size: 30,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: const Text(
-                        'Dodaj zdjęcia',
-                        style: TextStyle(fontSize: 11),
+                    TextField(
+                      key: const ValueKey<String>('new-place-address-search'),
+                      controller: _addressSearchController,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: _searchAddress,
+                      decoration: _fieldDecoration(
+                        'Szukaj adresu, np. Floriańska 15, Kraków',
+                        icon: Icons.search_rounded,
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    _map(),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Przesuń mapę, żeby pinezka wskazywała wejście.',
+                      style: TextStyle(fontSize: 11, color: AppColors.muted),
+                    ),
+                    const SizedBox(height: 8),
+                    _addressLine(),
                   ],
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _label('Nazwa'),
-          _textField(_nameController, hint: 'Nazwa miejscówki'),
-          const SizedBox(height: 10),
-          _label('Adres'),
-          _textField(_addressController, hint: 'Adres miejscówki'),
-          const SizedBox(height: 10),
-          _label('Lokalizacja'),
-          Container(
-            height: 112,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE6E9E7),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFD7D3CA)),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: <Widget>[
-                Positioned.fill(
-                  child: CustomPaint(painter: _MapSketchPainter()),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: const BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.location_on_rounded, size: 20),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          _selector(
-            label: 'Kategoria',
-            value: _category,
-            onTap: () => _choose(
-              title: 'Kategoria',
-              options: const [
-                'Kawiarnia',
-                'Biblioteka',
-                'Restauracja',
-                'Przestrzeń coworkingowa',
-              ],
-              value: _category,
-              onSelected: (value) => setState(() => _category = value),
-            ),
-          ),
-          const SizedBox(height: 10),
-          _selector(
-            label: 'Godziny otwarcia',
-            value: _hours,
-            onTap: () => _choose(
-              title: 'Godziny otwarcia',
-              options: const [
-                'Pon.–Pt. 8:00–20:00',
-                'Codziennie 9:00–22:00',
-                'Całą dobę',
-              ],
-              value: _hours,
-              onSelected: (value) => setState(() => _hours = value),
-            ),
-          ),
-          const SizedBox(height: 10),
-          _choiceRow(
-            'Atmosfera',
-            const ['Spokojnie', 'Na pogaduchy', 'Gwarno'],
-            _atmosphere,
-            (value) {
-              setState(() => _atmosphere = value);
-            },
-          ),
-          const SizedBox(height: 10),
-          _choiceRow(
-            'Cena',
-            const ['0–20 zł', '20–40 zł', '40–60 zł'],
-            _price,
-            (value) {
-              setState(() => _price = value);
-            },
-          ),
-          const SizedBox(height: 10),
-          _label('Dodatkowe udogodnienia'),
-          Row(children: <Widget>[_amenity('Wi-Fi'), _amenity('Toaleta')]),
-          Row(
-            children: <Widget>[_amenity('Gniazdka'), _amenity('Gastronomia')],
-          ),
-          Row(
-            children: <Widget>[
-              _amenity('Klima'),
-              _amenity('Dostęp do komputera'),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _label('Dodatkowe uwagi'),
-          _textField(
-            _descriptionController,
-            hint: 'Opisz miejsce',
-            maxLines: 3,
-          ),
-          const SizedBox(height: 18),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: _submit,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: AppColors.ink,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 22,
-                  vertical: 12,
+              _section(
+                'Udogodnienia',
+                Wrap(
+                  children: <Widget>[
+                    for (final (key, label, icon) in _amenities)
+                      _chip(
+                        label,
+                        _selectedAmenities.contains(key),
+                        () => setState(() {
+                          if (!_selectedAmenities.remove(key)) {
+                            _selectedAmenities.add(key);
+                          }
+                        }),
+                        icon: icon,
+                        key: ValueKey<String>('amenity-$key'),
+                      ),
+                  ],
                 ),
               ),
-              child: const Text('Opublikuj'),
-            ),
+              _section(
+                'Atmosfera',
+                Wrap(
+                  children: <Widget>[
+                    for (final atmosphere in Atmosphere.values)
+                      _chip(
+                        atmosphere.label,
+                        _atmosphere == atmosphere,
+                        () => setState(
+                          () => _atmosphere = _atmosphere == atmosphere
+                              ? null
+                              : atmosphere,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              _section(
+                'Ile kosztuje wizyta?',
+                Wrap(
+                  children: <Widget>[
+                    for (final (value, label) in _prices)
+                      _chip(
+                        label,
+                        _price == value,
+                        () => setState(
+                          () => _price = _price == value ? null : value,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              _section(
+                'Godziny otwarcia',
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Wrap(
+                      children: <Widget>[
+                        _chip(
+                          'Nie wiem',
+                          _hoursMode == _HoursMode.unknown,
+                          () => setState(() => _hoursMode = _HoursMode.unknown),
+                        ),
+                        _chip(
+                          'Całą dobę',
+                          _hoursMode == _HoursMode.alwaysOpen,
+                          () => setState(
+                            () => _hoursMode = _HoursMode.alwaysOpen,
+                          ),
+                          key: const ValueKey<String>('hours-always'),
+                        ),
+                        _chip(
+                          'Ustal godziny',
+                          _hoursMode == _HoursMode.custom,
+                          () => setState(() => _hoursMode = _HoursMode.custom),
+                          key: const ValueKey<String>('hours-custom'),
+                        ),
+                      ],
+                    ),
+                    if (_hoursMode == _HoursMode.custom) ...<Widget>[
+                      const SizedBox(height: 6),
+                      _hoursRow('Pon–Pt', _hours[0]),
+                      _hoursRow('Sob–Nd', _hours[1]),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 26),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(
+                      color: AppColors.closed,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  key: const ValueKey<String>('new-place-submit'),
+                  onPressed: _saving ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.ink,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                  ),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Dodaj'),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
-}
-
-class _MapSketchPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final road = Paint()
-      ..color = const Color(0xFFC9D2D3)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    final park = Paint()
-      ..color = const Color(0xFFD5E5D4)
-      ..style = PaintingStyle.fill;
-    canvas.drawOval(
-      Rect.fromLTWH(
-        size.width * .05,
-        size.height * .2,
-        size.width * .22,
-        size.height * .55,
-      ),
-      park,
-    );
-    canvas.drawLine(
-      Offset(0, size.height * .75),
-      Offset(size.width, size.height * .2),
-      road,
-    );
-    canvas.drawLine(
-      Offset(size.width * .18, 0),
-      Offset(size.width * .72, size.height),
-      road,
-    );
-    canvas.drawLine(
-      Offset(size.width * .7, 0),
-      Offset(size.width * .45, size.height),
-      road,
-    );
-    canvas.drawLine(
-      Offset(0, size.height * .28),
-      Offset(size.width, size.height * .8),
-      road,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

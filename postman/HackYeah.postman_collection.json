@@ -611,6 +611,89 @@
           "protocolProfileBehavior": {
             "followRedirects": false
           }
+        },
+        {
+          "name": "OAuth – Google login with return_to (Flutter web)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/google/login?return_to=http://localhost:61234/auth_callback.html",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "google",
+                "login"
+              ],
+              "query": [
+                {
+                  "key": "return_to",
+                  "value": "http://localhost:61234/auth_callback.html"
+                }
+              ]
+            },
+            "description": "Open in a browser. After login the backend sends the browser to return_to#access_token=..."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Redirects to Google (302) or 404 when Google is not configured\", () => pm.expect(pm.response.code).to.be.oneOf([302, 404]));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "OAuth – untrusted return_to → 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/google/login?return_to=https://evil.example/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "google",
+                "login"
+              ],
+              "query": [
+                {
+                  "key": "return_to",
+                  "value": "https://evil.example/"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"400 (or 404 when Google is not configured)\", () => pm.expect(pm.response.code).to.be.oneOf([400, 404]));"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
         }
       ]
     },
@@ -1435,6 +1518,49 @@
                 "exec": [
                   "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
                   "pm.test(\"Gdańsk found\", () => pm.expect(pm.response.json()[0].display_name).to.include(\"Gdańsk\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Geocode – address of a point (reverse)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/geocode/reverse?lat=50.0633&lon=19.9396",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "geocode",
+                "reverse"
+              ],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "50.0633"
+                },
+                {
+                  "key": "lon",
+                  "value": "19.9396"
+                }
+              ]
+            },
+            "description": "Address for a new place dropped on the map. Calls OpenStreetMap Nominatim (needs internet)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Kraków\", () => pm.expect(pm.response.json().city).to.eql(\"Kraków\"));"
                 ]
               }
             }

@@ -132,3 +132,63 @@ def test_all_countries_when_configured(client, nominatim, monkeypatch):
 @pytest.mark.parametrize("params", [{}, {"q": "K"}, {"q": "x" * 201}, {"q": "Kraków", "limit": 11}])
 def test_validation(client, params):
     assert client.get("/geocode", params=params).status_code == 422
+
+
+FLORIANSKA_REVERSE = {
+    "display_name": "15, Floriańska, Stare Miasto, Kraków, małopolskie, 31-019, Polska",
+    "address": {
+        "house_number": "15",
+        "road": "Floriańska",
+        "suburb": "Stare Miasto",
+        "city": "Kraków",
+        "postcode": "31-019",
+        "country_code": "PL",
+    },
+}
+
+
+class FakeReverse(FakeNominatim):
+    def __call__(self, request):
+        super().__call__(request)
+        return httpx.Response(self.status_code, json=self.results)
+
+
+class TestReverse:
+    def test_address_of_a_point(self, client, nominatim):
+        fake = nominatim(FakeReverse(FLORIANSKA_REVERSE))
+        response = client.get("/geocode/reverse", params={"lat": 50.0633, "lon": 19.9396}, headers=ANONYMOUS)
+        assert response.status_code == 200
+        assert response.json() == {
+            "street": "Floriańska",
+            "house_number": "15",
+            "postcode": "31-019",
+            "city": "Kraków",
+            "country_code": "pl",
+            "display_name": FLORIANSKA_REVERSE["display_name"],
+        }
+        [request] = fake.requests
+        assert request.url.path == "/reverse"
+        assert request.url.params["addressdetails"] == "1"
+
+    def test_village_counts_as_city(self, client, nominatim):
+        nominatim(FakeReverse({"display_name": "x", "address": {"village": "Zawoja", "country_code": "pl"}}))
+        body = client.get("/geocode/reverse", params={"lat": 49.6, "lon": 19.5}).json()
+        assert (body["city"], body["street"]) == ("Zawoja", None)
+
+    def test_nowhere_is_404(self, client, nominatim):
+        nominatim(FakeReverse({"error": "Unable to geocode"}))
+        assert client.get("/geocode/reverse", params={"lat": 55.5, "lon": 17.0}).status_code == 404
+
+    def test_cached_per_point(self, client, nominatim):
+        fake = nominatim(FakeReverse(FLORIANSKA_REVERSE))
+        client.get("/geocode/reverse", params={"lat": 50.063301, "lon": 19.939601})
+        client.get("/geocode/reverse", params={"lat": 50.063302, "lon": 19.939602})  # same ~1 m cell
+        assert len(fake.requests) == 1
+
+    def test_upstream_failure(self, client, nominatim):
+        nominatim(FakeReverse(status_code=500))
+        assert client.get("/geocode/reverse", params={"lat": 50.0, "lon": 19.0}).status_code == 503
+
+    @pytest.mark.parametrize("params", [{}, {"lat": 91, "lon": 0}, {"lat": 50, "lon": 181}])
+    def test_validation(self, client, params):
+        assert client.get("/geocode/reverse", params=params).status_code == 422

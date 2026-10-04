@@ -59,6 +59,21 @@ Usunięcie danych mock w Compass: filtr `{ "is_mock": true }` w kolekcjach `plac
 - curl: [`examples/README.md`](examples/README.md)
 - Postman: [`postman/README.md`](postman/README.md)
 
+## Wdrożenie (Render)
+
+Oba serwisy opisuje [`render.yaml`](render.yaml):
+
+- `focusmap-api`: backend, https://focusmap-api.onrender.com
+- `focusmap`: frontend Flutter web, https://focusmap.onrender.com (działa w przeglądarce telefonu)
+
+Pierwsze uruchomienie: Render Dashboard → **New → Blueprint** → to repo, potem wpisz `MONGODB_URI`.
+Każdy push na wybraną gałąź wdraża się sam.
+
+- MongoDB Atlas → Security → Network Access: dodaj `0.0.0.0/0`, bo Render (plan free) nie ma stałego IP.
+- Jeśli Render nada inne adresy niż powyższe, popraw `API_URL`, `CORS_ORIGINS` i `PUBLIC_BASE_URL`.
+- Plan free usypia backend po 15 min bez ruchu; pierwsze zapytanie po przerwie trwa do ~1 min.
+- Zdjęcia leżą na dysku serwisu i znikają przy każdym wdrożeniu (do zmiany na zewnętrzny storage).
+
 ## Testy
 
 ```bash

@@ -10,6 +10,7 @@ class AppColors {
   static const Color muted = Color(0xFF817A70);
   static const Color divider = Color(0xFFE3DED5);
   static const Color field = Color(0xFFE4E1DD);
+  static const Color formField = Color(0xFFF5EEDD);
   static const Color chip = Color(0xFFEAE7E2);
   static const Color sheet = Color(0xFFF6F1E9);
   static const Color placeholder = Color(0xFFDAD8D5);

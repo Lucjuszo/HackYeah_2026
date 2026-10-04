@@ -1,0 +1,75 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> this repo.
+# Adresy zakładają, że nazwy serwisów są wolne. Jeśli Render nada inne,
+# popraw API_URL, CORS_ORIGINS i PUBLIC_BASE_URL.
+services:
+  # Backend: FastAPI + MongoDB Atlas
+  - type: web
+    name: focusmap-api
+    branch: db-on-compass # mian
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.7
+      - key: USE_REMOTE_MONGO
+        value: "true"
+      # Wpisz w Dashboardzie (sekret, nie trafia do repo).
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGO_DB
+        value: hackyeah
+      - key: CORS_ORIGINS
+        value: https://focusmap.onrender.com
+      - key: CORS_ALLOW_LOCALHOST
+        value: "false"
+      - key: PUBLIC_BASE_URL
+        value: https://focusmap-api.onrender.com
+      - key: TIMEZONE
+        value: Europe/Warsaw
+      - key: JWT_SECRET
+        generateValue: true
+      - key: AUTH_DEV_LOGIN
+        value: "false"
+      # Logowanie OAuth – wpisz w Dashboardzie. Callbacki u dostawców:
+      # https://focusmap-api.onrender.com/auth/google/callback
+      # https://focusmap-api.onrender.com/auth/github/callback
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+
+  # Frontend: Flutter web, działa w przeglądarce telefonu i komputera
+  - type: web
+    name: focusmap
+    branch: db-on-compass # mian
+    runtime: static
+    rootDir: frontend
+    buildCommand: bash render-build.sh
+    staticPublishPath: build/web
+    envVars:
+      - key: API_URL
+        value: https://focusmap-api.onrender.com
+      - key: FLUTTER_VERSION
+        value: 3.47.6
+    headers:
+      # Flutter i tak ładuje nową wersję, ale bez tego telefon potrafi trzymać stary index.html.
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      - path: /flutter_service_worker.js
+        name: Cache-Control
+        value: no-cache
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

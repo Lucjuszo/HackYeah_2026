@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:miejscowki_map/api/models.dart';
 import 'package:miejscowki_map/api/places_api.dart';
+import 'package:miejscowki_map/auth/auth.dart';
 import 'package:miejscowki_map/services/location_service.dart';
 
 Json summaryJson(
@@ -79,7 +80,7 @@ Json commentJson(int i) => {
   'created_at': '2026-09-2${i % 10}T10:00:00Z',
 };
 
-/// In-memory backend: answers the public endpoints and records every request.
+/// In-memory backend: answers like the real API (public + logged-in endpoints) and records every request.
 class FakeBackend {
   FakeBackend({
     List<Json>? places,
@@ -89,6 +90,8 @@ class FakeBackend {
            [summaryJson('p1', 'Kawiarnia Pod Kodem'), summaryJson('p2', 'Czytelnia', lat: 52.2297, lon: 21.0122, average: 3.9, openNow: false, opensAt: '2026-10-08T09:00:00+02:00', closesAt: null)];
 
   List<Json> places;
+
+  /// Comments every place starts with.
   int comments;
   bool failPlaces;
   List<Json> geocodeResults = [
@@ -103,22 +106,88 @@ class FakeBackend {
   ];
   final List<Uri> requests = [];
 
+  /// Bodies of POST /places.
+  final List<Json> created = [];
+
+  /// The only token the logged-in endpoints accept.
+  String validToken = FakeOAuthLauncher.token;
+  static const Json me = {'id': 'me', 'name': 'Ja Testowy', 'role': 'user'};
+  List<String> providers = ['github', 'google'];
+
+  /// place id -> the logged-in user's score.
+  final Map<String, int> myRatings = {};
+  final Map<String, List<Json>> _commentsByPlace = {};
+
+  List<Json> commentsOf(String placeId) =>
+      _commentsByPlace.putIfAbsent(placeId, () => [for (var i = 0; i < comments; i++) commentJson(i)]);
+
+  /// GET /geocode/reverse answer; null = 404 (no address here).
+  Json? reverseResult = {
+    'street': 'Floriańska',
+    'house_number': '15',
+    'postcode': '31-019',
+    'city': 'Kraków',
+    'country_code': 'pl',
+    'display_name': '15, Floriańska, Kraków, Polska',
+  };
+
   List<Uri> get searches => requests.where((u) => u.path == '/places/summary').toList();
 
   Uri get lastSearch => searches.last;
 
-  http.Response _json(Object body, {Map<String, String> headers = const {}}) => http.Response.bytes(
+  http.Response _json(Object body, {int status = 200, Map<String, String> headers = const {}}) => http.Response.bytes(
     utf8.encode(jsonEncode(body)),
-    200,
+    status,
     headers: {'content-type': 'application/json', ...headers},
   );
 
+  http.Response _error(int status, String detail) => _json({'detail': detail}, status: status);
+
   late final http.Client client = MockClient((http.Request request) async {
     final uri = request.url;
+    final method = request.method;
     requests.add(uri);
     final path = uri.pathSegments;
+    final loggedIn = request.headers['Authorization'] == 'Bearer $validToken';
+    Json body() => jsonDecode(request.body) as Json;
+
+    if (uri.path == '/auth/providers') {
+      return _json({
+        'providers': [for (final p in providers) {'name': p, 'login_url': 'http://api.test/auth/$p/login'}],
+        'dev_login': false,
+      });
+    }
+    if (uri.path == '/auth/me') return loggedIn ? _json(me) : _error(401, 'Invalid or expired token');
+
+    if (method == 'POST' && uri.path == '/places') {
+      if (!loggedIn) return _error(401, 'Invalid or expired token');
+      final data = body();
+      created.add(data);
+      final id = 'new${created.length}';
+      places = [
+        ...places,
+        summaryJson(
+          id,
+          data['name'] as String,
+          lat: (data['coordinates'] as Json)['lat'] as double,
+          lon: (data['coordinates'] as Json)['lon'] as double,
+          average: null,
+          count: 0,
+          openNow: null,
+          closesAt: null,
+          thumbnail: null,
+          photoCount: 0,
+          priceRange: null,
+        ),
+      ];
+      return _json(placeJson(id, data['name'] as String), status: 201);
+    }
+    if (uri.path == '/geocode/reverse') {
+      final result = reverseResult;
+      return result == null ? _error(404, 'No address at this point') : _json(result);
+    }
     if (uri.path == '/places/summary') {
-      if (failPlaces) return http.Response('{"detail": "boom"}', 500);
+      if (failPlaces) return _error(500, 'boom');
       // Like the real backend: only places inside the visible map area.
       final bbox = uri.queryParameters['bbox']?.split(',').map(double.parse).toList();
       final visible = bbox == null
@@ -131,21 +200,87 @@ class FakeBackend {
       return _json(visible, headers: {'x-total-count': '${visible.length}'});
     }
     if (uri.path == '/geocode') return _json(geocodeResults);
-    if (path.length == 3 && path[0] == 'places' && path[2] == 'comments') {
-      final limit = int.parse(uri.queryParameters['limit'] ?? '20');
-      final skip = int.parse(uri.queryParameters['skip'] ?? '0');
-      final page = [for (var i = skip; i < comments && i < skip + limit; i++) commentJson(i)];
-      return _json(page, headers: {'x-total-count': '$comments'});
+
+    // /places/{id}/ratings/me
+    if (path.length == 4 && path[0] == 'places' && path[2] == 'ratings' && path[3] == 'me') {
+      if (!loggedIn) return _error(401, 'Invalid or expired token');
+      final placeId = path[1];
+      switch (method) {
+        case 'GET':
+          final score = myRatings[placeId];
+          return score == null ? _error(404, "You haven't rated this place") : _json({'score': score});
+        case 'PUT':
+          final score = body()['score'] as int;
+          myRatings[placeId] = score;
+          return _json({
+            'rating': {'score': score},
+            'summary': {'average': score.toDouble(), 'count': 13},
+          });
+        case 'DELETE':
+          if (myRatings.remove(placeId) == null) return _error(404, "You haven't rated this place");
+          return _json({'average': 4.6, 'count': 12});
+      }
     }
+
+    // /places/{id}/comments[/{commentId}]
+    if (path.length >= 3 && path[0] == 'places' && path[2] == 'comments') {
+      final list = commentsOf(path[1]);
+      if (path.length == 3 && method == 'GET') {
+        final limit = int.parse(uri.queryParameters['limit'] ?? '20');
+        final skip = int.parse(uri.queryParameters['skip'] ?? '0');
+        return _json(list.skip(skip).take(limit).toList(), headers: {'x-total-count': '${list.length}'});
+      }
+      if (!loggedIn) return _error(401, 'Invalid or expired token');
+      if (path.length == 3 && method == 'POST') {
+        final comment = {
+          'id': 'c-new-${list.length}',
+          'place_id': path[1],
+          'user_id': me['id'],
+          'user_name': me['name'],
+          'text': body()['text'],
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        };
+        list.insert(0, comment);
+        return _json(comment, status: 201);
+      }
+      final i = list.indexWhere((c) => c['id'] == path[3]);
+      if (i < 0) return _error(404, 'Comment not found');
+      if (list[i]['user_id'] != me['id']) return _error(403, 'Only the author or an admin can change this comment');
+      if (method == 'PATCH') {
+        list[i] = {...list[i], 'text': body()['text'], 'edited_at': DateTime.now().toUtc().toIso8601String()};
+        return _json(list[i]);
+      }
+      if (method == 'DELETE') {
+        list.removeAt(i);
+        return http.Response('', 204);
+      }
+    }
+
     if (path.length == 2 && path[0] == 'places') {
       final summary = places.firstWhere((p) => p['id'] == path[1], orElse: () => {});
-      if (summary.isEmpty) return http.Response('{"detail": "Place not found"}', 404);
+      if (summary.isEmpty) return _error(404, 'Place not found');
       return _json(placeJson(path[1], summary['name'] as String));
     }
-    return http.Response('{"detail": "Not Found"}', 404);
+    return _error(404, 'Not Found');
   });
 
   PlacesApi api() => PlacesApi(baseUrl: 'http://api.test', client: client);
+}
+
+class FakeOAuthLauncher implements OAuthLauncher {
+  FakeOAuthLauncher({this.failure});
+
+  static const String token = 'oauth-token';
+
+  final LoginException? failure;
+  final List<Uri> logins = [];
+
+  @override
+  Future<LoginResult> login(Uri loginUrl) async {
+    logins.add(loginUrl);
+    if (failure != null) throw failure!;
+    return const LoginResult(token, 86400);
+  }
 }
 
 class FakeLocationService implements LocationService {
