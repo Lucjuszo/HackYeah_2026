@@ -25,7 +25,14 @@ def _forbidden() -> HTTPException:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_comment(place_id: ExistingPlaceId, body: CommentCreate, db: Db, user: CurrentUser) -> Comment:
     comment_limiter.check(user.id)
-    return await repo.create_comment(db, place_id, user.id, body.text, user_name=user.name)
+    return await repo.create_comment(
+        db,
+        place_id,
+        user.id,
+        body.text,
+        user_name=user.name,
+        score=body.score,
+    )
 
 
 @router.get("")

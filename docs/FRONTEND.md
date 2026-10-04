@@ -20,6 +20,7 @@ Front: Flutter (`frontend/`). Kontrakt API: `http://localhost:8000/docs` (Swagge
 | `CORS_ORIGINS` | `https://app.example.com` | adresy frontu, które mogą wołać API z przeglądarki |
 | `CORS_ALLOW_LOCALHOST` | `true` (domyślnie) | dodatkowo `localhost` / `127.0.0.1` na **dowolnym porcie** – `flutter run -d chrome` losuje port. Na produkcji `false` |
 | `PUBLIC_BASE_URL` | `http://localhost:8000` | adresy zdjęć stają się pełne (`http://localhost:8000/media/...`); bez tego są względne `/media/...` |
+| `OAUTH_CALLBACK_BASE_URL` | `http://localhost:8000` | publiczny adres API używany jako baza callbacku GitHub/Google; na telefonie ustaw adres LAN komputera |
 | `AUTH_REDIRECT_URL` | `http://localhost:5173/auth/callback` | strona frontu, na którą wraca logowanie OAuth |
 | `AUTH_DEV_LOGIN` | `true` | lokalnie: logowanie bez OAuth (`POST /auth/dev-login`) |
 

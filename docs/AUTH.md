@@ -61,11 +61,18 @@ AUTH_DEV_LOGIN=true         # tylko lokalnie! patrz niżej
    - *Application name*: `HackYeah dev`
    - *Homepage URL*: `http://localhost:8000`
    - *Authorization callback URL*: **`http://localhost:8000/auth/github/callback`**
+     (albo `http://IP_KOMPUTERA:8000/auth/github/callback`, jeśli logujesz się na telefonie)
 3. **Register application** → skopiuj *Client ID*, potem **Generate a new client secret**.
 4. Do `.env`:
    ```dotenv
    GITHUB_CLIENT_ID=...
    GITHUB_CLIENT_SECRET=...
+   ```
+
+   Gdy używasz telefonu w tej samej sieci Wi-Fi, ustaw w `.env` ten sam adres bazowy,
+   który został wpisany w GitHub OAuth App, np.:
+   ```dotenv
+   OAUTH_CALLBACK_BASE_URL=http://192.168.1.20:8000
    ```
 
 ### 2. Google (ok. 5 min)

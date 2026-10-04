@@ -43,6 +43,13 @@ async def list_providers(request: Request) -> AuthProviders:
 RETURN_KEY = "auth_return_to"
 
 
+def _provider_callback_url(provider: str, request: Request) -> str:
+    """Return the exact provider callback URI registered in the OAuth app."""
+    if settings.oauth_callback_base_url:
+        return f"{settings.oauth_callback_base_url.rstrip('/')}/auth/{provider}/callback"
+    return str(request.url_for("oauth_callback", provider=provider))
+
+
 def _is_allowed_return_url(url: str) -> bool:
     """Only frontends we trust may receive tokens: CORS origins, AUTH_REDIRECT_URL's origin and,
     with CORS_ALLOW_LOCALHOST, localhost on any port (Flutter web / the desktop app's loopback page)."""
@@ -83,7 +90,7 @@ async def oauth_login(
         request.session[RETURN_KEY] = return_to
     else:
         request.session.pop(RETURN_KEY, None)
-    redirect_uri = str(request.url_for("oauth_callback", provider=provider))
+    redirect_uri = _provider_callback_url(provider, request)
     return await oauth_flow.authorize_redirect(provider, request, redirect_uri)
 
 

@@ -30,6 +30,7 @@ def _from_document(doc: dict[str, Any]) -> Comment:
         user_id=doc["user_id"],
         user_name=doc.get("user_name"),
         text=doc["text"],
+        score=doc.get("score"),
         is_mock=doc.get("is_mock", False),
         created_at=doc["created_at"],
         edited_at=doc.get("edited_at"),
@@ -44,6 +45,7 @@ async def create_comment(
     text: str,
     *,
     user_name: str | None = None,
+    score: int | None = None,
     is_mock: bool = False,
 ) -> Comment:
     doc = {
@@ -51,6 +53,7 @@ async def create_comment(
         "user_id": user_id,
         "user_name": user_name,
         "text": text,
+        "score": score,
         "is_mock": is_mock,
         "created_at": utcnow(),
     }
