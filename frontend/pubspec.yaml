@@ -13,6 +13,7 @@ dependencies:
   flutter_svg: ^2.0.17
   geolocator: ^14.1.1
   http: ^1.6.0
+  image_picker: ^1.2.3
   latlong2: ^0.10.1
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.3
@@ -23,6 +24,8 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
+  image_picker_platform_interface: ^2.11.1
+  plugin_platform_interface: ^2.1.8
 
 flutter:
   uses-material-design: true

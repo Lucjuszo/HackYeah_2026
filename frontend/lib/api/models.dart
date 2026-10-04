@@ -232,6 +232,7 @@ class Photo {
     required this.full,
     required this.createdAt,
     this.thumbnail,
+    this.uploadedBy,
     this.uploadedByName,
   });
 
@@ -241,6 +242,7 @@ class Photo {
     thumbnail: json['thumbnail'] == null
         ? null
         : PhotoVariant.fromJson(json['thumbnail'] as Json, apiUrl: apiUrl),
+    uploadedBy: json['uploaded_by'] as String?,
     uploadedByName: json['uploaded_by_name'] as String?,
     createdAt: _date(json['created_at'])!,
   );
@@ -248,6 +250,7 @@ class Photo {
   final String id;
   final PhotoVariant full;
   final PhotoVariant? thumbnail;
+  final String? uploadedBy;
   final String? uploadedByName;
   final DateTime createdAt;
 
@@ -409,7 +412,11 @@ class Comment {
 
 /// The logged-in user (GET /auth/me).
 class CurrentUser {
-  const CurrentUser({required this.id, required this.name, this.isAdmin = false});
+  const CurrentUser({
+    required this.id,
+    required this.name,
+    this.isAdmin = false,
+  });
 
   factory CurrentUser.fromJson(Json json) => CurrentUser(
     id: json['id'] as String,
@@ -423,6 +430,9 @@ class CurrentUser {
 
   /// Authors edit and delete their own comments, admins any.
   bool canModify(Comment comment) => isAdmin || comment.userId == id;
+
+  /// Uploaders delete their own photos, admins any.
+  bool canDeletePhoto(Photo photo) => isAdmin || photo.uploadedBy == id;
 }
 
 /// A city / address from GET /geocode.
@@ -552,7 +562,8 @@ class NewPlace {
       'opening_hours': {
         'always_open': h.alwaysOpen,
         'periods': [
-          for (final p in h.periods) {'day': p.day, 'open': p.open, 'close': p.close},
+          for (final p in h.periods)
+            {'day': p.day, 'open': p.open, 'close': p.close},
         ],
       },
   };
@@ -566,10 +577,12 @@ class NewPlace {
 String? resolveUrl(Uri apiUrl, String? url) {
   if (url == null) return null;
   final resolved = apiUrl.resolve(url);
-  final isLoopback = resolved.host == 'localhost' ||
+  final isLoopback =
+      resolved.host == 'localhost' ||
       resolved.host == '127.0.0.1' ||
       resolved.host == '::1';
-  final apiIsLoopback = apiUrl.host == 'localhost' ||
+  final apiIsLoopback =
+      apiUrl.host == 'localhost' ||
       apiUrl.host == '127.0.0.1' ||
       apiUrl.host == '::1';
   if (isLoopback && !apiIsLoopback) {

@@ -4,7 +4,7 @@ from enum import StrEnum
 from bson import ObjectId
 from fastapi import APIRouter, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app.auth import CurrentUser
 from app.config import settings
@@ -109,18 +109,24 @@ async def get_photo(place_id: str, photo_id: str, db: Db) -> Photo:
 @router.get(
     "/{photo_id}/file",
     response_class=FileResponse,
-    responses={200: {"content": {"image/webp": {}}, "description": "The image"}},
+    responses={
+        200: {"content": {"image/webp": {}}, "description": "The image"},
+        307: {"description": "Redirect to the image on the CDN (Cloudinary storage)"},
+    },
 )
 async def download_photo(
     place_id: str, photo_id: str, db: Db, size: PhotoSize = PhotoSize.FULL, download: bool = False
-) -> FileResponse:
+) -> Response:
     """The image itself. `download=true` makes browsers save it as a file instead of displaying it."""
     sub = await repo.get_photo_subdocument(db, place_id, photo_id)
     if sub is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Photo not found")
     # Photos uploaded before thumbnails existed only have the full version.
     key = sub["thumbnail"]["key"] if size == PhotoSize.THUMBNAIL and sub.get("thumbnail") else sub["key"]
-    path = get_storage().path(key)
+    storage = get_storage()
+    if (remote := storage.redirect_url(key, download=download)) is not None:
+        return RedirectResponse(remote)
+    path = storage.path(key)
     if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Photo file not found")
     suffix = "_thumb" if size == PhotoSize.THUMBNAIL else ""

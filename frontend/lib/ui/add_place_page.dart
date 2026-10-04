@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import '../api/models.dart';
 import '../api/places_api.dart';
 import '../auth/auth.dart';
+import 'photo_picker.dart';
 import '../services/location_service.dart';
 import 'login_sheet.dart';
 import 'theme.dart';
@@ -52,6 +53,14 @@ List<OpeningPeriod> _periods(List<_DayGroupHours> groups) {
 
 /// "Dodaj miejscówkę": name, a pin on the map (address filled in automatically) and the basics.
 /// Pops with the created [Place].
+/// What AddPlacePage returns: the new place and, when some photos didn't make it, why.
+class AddedPlace {
+  const AddedPlace(this.place, {this.photoError});
+
+  final Place place;
+  final String? photoError;
+}
+
 class AddPlacePage extends StatefulWidget {
   const AddPlacePage({
     required this.api,
@@ -123,6 +132,11 @@ class _AddPlacePageState extends State<AddPlacePage> {
   bool _nameMissing = false;
   bool _saving = false;
   String? _error;
+
+  /// Chosen before saving, uploaded right after the place is created.
+  final List<PickedPhoto> _photos = <PickedPhoto>[];
+  static const int _maxPhotos = 20; // MAX_PHOTOS_PER_PLACE in the API
+  String? _uploadProgress;
 
   @override
   void initState() {
@@ -214,6 +228,40 @@ class _AddPlacePageState extends State<AddPlacePage> {
     setState(() => opening ? group.open = picked : group.close = picked);
   }
 
+  Future<void> _pickPhotos() async {
+    final free = _maxPhotos - _photos.length;
+    if (free <= 0) return;
+    final picked = await pickPhotos(context, limit: free);
+    if (picked.isEmpty || !mounted) return;
+    setState(() => _photos.addAll(picked));
+  }
+
+  /// Sends the chosen photos to the just-created place; the reason of the first failure, if any.
+  Future<String?> _uploadPhotos(Place place, String token) async {
+    String? error;
+    var failed = 0;
+    for (final (i, photo) in _photos.indexed) {
+      if (mounted) {
+        setState(
+          () => _uploadProgress = 'Wysyłam zdjęcia ${i + 1}/${_photos.length}…',
+        );
+      }
+      try {
+        await widget.api.uploadPhoto(
+          place.id,
+          photo.bytes,
+          filename: photo.name,
+          token: token,
+        );
+      } on ApiException catch (e) {
+        failed++;
+        error ??= e.message;
+      }
+    }
+    if (error == null) return null;
+    return 'Nie dodano $failed z ${_photos.length} zdjęć ($error). Spróbuj ponownie w szczegółach miejsca.';
+  }
+
   // --- saving
 
   bool get _addressReady {
@@ -272,8 +320,20 @@ class _AddPlacePageState extends State<AddPlacePage> {
     if (token == null || !mounted) return;
     setState(() => _saving = true);
     try {
-      final place = await widget.api.createPlace(draft, token: token);
-      if (mounted) Navigator.of(context).pop(place);
+      var place = await widget.api.createPlace(draft, token: token);
+      String? photoError;
+      if (_photos.isNotEmpty) {
+        photoError = await _uploadPhotos(place, token);
+        // Fresh record with the photos (thumbnail on the map, header in the details).
+        try {
+          place = await widget.api.getPlace(place.id);
+        } on ApiException {
+          // The place exists either way; photos show up after the next refresh.
+        }
+      }
+      if (mounted) {
+        Navigator.of(context).pop(AddedPlace(place, photoError: photoError));
+      }
     } on ApiException catch (e) {
       if (e.statusCode == 401) await widget.auth.invalidate();
       if (!mounted) return;
@@ -528,53 +588,58 @@ class _AddPlacePageState extends State<AddPlacePage> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           child: Column(
             children: <Widget>[
-              Material(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(14),
-                child: InkWell(
-                  key: const ValueKey<String>('new-place-photos'),
+              if (_photos.isNotEmpty)
+                _ChosenPhotos(
+                  photos: _photos,
+                  onAdd: _saving || _photos.length >= _maxPhotos
+                      ? null
+                      : _pickPhotos,
+                  onRemove: _saving
+                      ? null
+                      : (int i) => setState(() => _photos.removeAt(i)),
+                )
+              else
+                Material(
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(14),
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        'Zdjęcia można dodać po utworzeniu miejscówki.',
+                  child: InkWell(
+                    key: const ValueKey<String>('new-place-photos'),
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: _saving ? null : _pickPhotos,
+                    child: Container(
+                      height: 106,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.photoBorder),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          const Icon(
+                            Icons.image_outlined,
+                            size: 30,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 13,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: const Text(
+                              'Dodaj zdjęcia',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  child: Container(
-                    height: 106,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: AppColors.photoBorder),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: <Widget>[
-                        const Icon(
-                          Icons.image_outlined,
-                          size: 30,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 13,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          child: const Text(
-                            'Dodaj zdjęcia',
-                            style: TextStyle(fontSize: 11),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
-              ),
               const SizedBox(height: 14),
               TextField(
                 key: const ValueKey<String>('new-place-name'),
@@ -740,9 +805,111 @@ class _AddPlacePageState extends State<AddPlacePage> {
                       : const Text('Dodaj'),
                 ),
               ),
+              if (_saving && _uploadProgress != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    _uploadProgress!,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Photos picked for the new place: thumbnails with a remove button, plus an "add more" tile.
+class _ChosenPhotos extends StatelessWidget {
+  const _ChosenPhotos({
+    required this.photos,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<PickedPhoto> photos;
+  final VoidCallback? onAdd;
+  final ValueChanged<int>? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 106,
+      child: ListView.separated(
+        key: const ValueKey<String>('new-place-chosen-photos'),
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length + (onAdd == null ? 0 : 1),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (_, int i) {
+          if (i == photos.length) {
+            return Material(
+              color: AppColors.field,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                key: const ValueKey<String>('new-place-more-photos'),
+                borderRadius: BorderRadius.circular(14),
+                onTap: onAdd,
+                child: const SizedBox(
+                  width: 106,
+                  child: Icon(
+                    Icons.add_a_photo_outlined,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            );
+          }
+          return Stack(
+            children: <Widget>[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.memory(
+                  photos[i].bytes,
+                  width: 106,
+                  height: 106,
+                  fit: BoxFit.cover,
+                  cacheWidth: 320,
+                  errorBuilder: (_, _, _) => Container(
+                    width: 106,
+                    height: 106,
+                    color: AppColors.field,
+                    child: const Icon(
+                      Icons.broken_image_outlined,
+                      color: AppColors.placeholderIcon,
+                    ),
+                  ),
+                ),
+              ),
+              if (onRemove != null)
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Material(
+                    color: AppColors.imageOverlay,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      key: ValueKey<String>('remove-photo-$i'),
+                      customBorder: const CircleBorder(),
+                      onTap: () => onRemove!(i),
+                      child: const Padding(
+                        padding: EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: AppColors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

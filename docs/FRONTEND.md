@@ -119,8 +119,10 @@ backendu, dlatego front nie woła Nominatim bezpośrednio). Bez logowania. `503`
   Nie ustawiaj ręcznie `Content-Type` – przeglądarka doda `boundary` sama przy `FormData`.
 - Odpowiedź: `url` (pełna wersja ≤1600 px) i `thumbnail.url` (≤400 px), plus wymiary – można zarezerwować
   miejsce w layoucie (`width`/`height` w `<img>`), zanim obrazek się wczyta.
-- `url` wkładasz prosto w `<img src>` (z `PUBLIC_BASE_URL` jest pełny). Pliki są publiczne i cache'owane na zawsze.
-- Pobranie jako plik: `GET /places/{id}/photos/{photo_id}/file?size=full|thumbnail&download=true`.
+- `url` wkładasz prosto w `<img src>`: na produkcji to adres CDN Cloudinary (`https://res.cloudinary.com/...`),
+  lokalnie `/media/...` (z `PUBLIC_BASE_URL` pełny). Pliki są publiczne i cache'owane na zawsze.
+- Pobranie jako plik: `GET /places/{id}/photos/{photo_id}/file?size=full|thumbnail&download=true`
+  (przy Cloudinary: przekierowanie 307 na CDN).
 - Usunąć może autor (`uploaded_by`) albo admin. `uploaded_by_name` = podpis „dodał(a)”.
 
 ## Błędy

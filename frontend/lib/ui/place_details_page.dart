@@ -6,10 +6,11 @@ import '../auth/auth.dart';
 import '../services/travel_time_service.dart';
 import 'format.dart' as fmt;
 import 'login_sheet.dart';
+import 'photo_picker.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-/// Everything about one place, read-only: photos, rating, hours, amenities, menu, opinions.
+/// Everything about one place: photos, rating, hours, amenities, menu, opinions.
 class PlaceDetailsPage extends StatefulWidget {
   const PlaceDetailsPage({
     required this.api,
@@ -57,6 +58,10 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   bool _ratingBusy = false;
   final _commentController = TextEditingController();
   bool _posting = false;
+  int _uploading = 0; // photos still being sent
+
+  /// Same limit as the API (MAX_PHOTOS_PER_PLACE).
+  static const int _maxPhotos = 20;
 
   @override
   void initState() {
@@ -274,9 +279,103 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   void _openPhoto(List<Photo> photos, int index) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => PhotoViewerPage(photos: photos, initialIndex: index),
+        builder: (_) => PhotoViewerPage(
+          photos: photos,
+          initialIndex: index,
+          canDelete: (Photo photo) => _me?.canDeletePhoto(photo) ?? false,
+          onDelete: _deletePhoto,
+        ),
       ),
     );
+  }
+
+  Future<void> _addPhotos() async {
+    if (_uploading > 0) return;
+    final token = await requireLogin(
+      context,
+      widget.auth,
+      reason: 'Zaloguj się, żeby dodać zdjęcie.',
+    );
+    if (token == null || !mounted) return;
+    if (_me == null) await _loadMine();
+    if (!mounted) return;
+    final free = _maxPhotos - (_place?.photos.length ?? 0);
+    if (free <= 0) {
+      _toast('To miejsce ma już maksymalną liczbę zdjęć.');
+      return;
+    }
+    final picked = await pickPhotos(context, limit: free);
+    if (picked.isEmpty || !mounted) return;
+
+    setState(() => _uploading = picked.length);
+    var added = 0;
+    String? error;
+    for (final photo in picked) {
+      try {
+        await widget.api.uploadPhoto(
+          _placeId,
+          photo.bytes,
+          filename: photo.name,
+          token: token,
+        );
+        added++;
+      } on ApiException catch (e) {
+        error = e.message;
+        if (e.statusCode == 401) {
+          await widget.auth.invalidate();
+          if (mounted) setState(() => _me = null);
+        }
+        // Session gone or the place is full: the remaining ones would fail the same way.
+        if (e.statusCode == 401 || e.statusCode == 409) break;
+      } finally {
+        if (mounted) setState(() => _uploading--);
+      }
+    }
+    if (!mounted) return;
+    setState(() => _uploading = 0);
+    if (added > 0) await _loadPlace();
+    _toast(switch ((added, error)) {
+      (0, final String e) => e,
+      (_, final String e) => 'Dodano $added z ${picked.length} zdjęć. $e',
+      (1, _) => 'Dodano zdjęcie.',
+      _ => 'Dodano $added zdjęć.',
+    });
+  }
+
+  /// From the photo viewer; true when the photo is gone (the viewer closes then).
+  Future<bool> _deletePhoto(Photo photo) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Usunąć zdjęcie?'),
+        content: const Text('Tej operacji nie można cofnąć.'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Anuluj'),
+          ),
+          TextButton(
+            key: const ValueKey<String>('confirm-delete-photo'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(
+              'Usuń',
+              style: TextStyle(color: AppColors.closed),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return false;
+    var deleted = false;
+    await _withLogin((String token) async {
+      await widget.api.deletePhoto(_placeId, photo.id, token: token);
+      deleted = true;
+    });
+    if (deleted && mounted) {
+      _toast('Usunięto zdjęcie.');
+      await _loadPlace();
+    }
+    return deleted;
   }
 
   @override
@@ -344,14 +443,17 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
                       title: 'Godziny otwarcia',
                       child: _OpeningHoursDisclosure(hours: place.openingHours),
                     ),
-                    if (photos.length > 1)
-                      _Section(
-                        title: 'Zdjęcia (${photos.length})',
-                        child: _PhotoStrip(
-                          photos: photos,
-                          onOpen: (int i) => _openPhoto(photos, i),
-                        ),
+                    _Section(
+                      title: photos.isEmpty
+                          ? 'Zdjęcia'
+                          : 'Zdjęcia (${photos.length})',
+                      child: _PhotoStrip(
+                        photos: photos,
+                        onOpen: (int i) => _openPhoto(photos, i),
+                        onAdd: photos.length < _maxPhotos ? _addPhotos : null,
+                        uploading: _uploading,
                       ),
+                    ),
                     if (place.features.isNotEmpty)
                       _Section(
                         title: 'Wyróżnia się',
@@ -462,8 +564,10 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
             ),
           ],
         ),
-        if ((widget.travelTimes, widget.origin)
-            case (final service?, final origin?)) ...<Widget>[
+        if ((widget.travelTimes, widget.origin) case (
+          final service?,
+          final origin?,
+        )) ...<Widget>[
           const SizedBox(height: 6),
           TravelTimesLine(
             service: service,
@@ -652,26 +756,95 @@ class _PhotoHeaderState extends State<_PhotoHeader> {
 }
 
 class _PhotoStrip extends StatelessWidget {
-  const _PhotoStrip({required this.photos, required this.onOpen});
+  const _PhotoStrip({
+    required this.photos,
+    required this.onOpen,
+    required this.onAdd,
+    required this.uploading,
+  });
 
   final List<Photo> photos;
   final ValueChanged<int> onOpen;
 
+  /// The "add" tile in front; null hides it (place full).
+  final VoidCallback? onAdd;
+
+  /// Photos still being sent: the add tile shows progress instead.
+  final int uploading;
+
   @override
   Widget build(BuildContext context) {
+    final lead = onAdd == null && uploading == 0 ? 0 : 1;
     return SizedBox(
       height: 96,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: photos.length,
+        itemCount: photos.length + lead,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (_, int i) => GestureDetector(
-          onTap: () => onOpen(i),
-          child: PlaceImage(
-            url: photos[i].thumbnailUrl,
-            width: 96,
-            height: 96,
-            radius: 14,
+        itemBuilder: (_, int i) {
+          if (i < lead) {
+            return _AddPhotoTile(onTap: onAdd, uploading: uploading);
+          }
+          return GestureDetector(
+            onTap: () => onOpen(i - lead),
+            child: PlaceImage(
+              url: photos[i - lead].thumbnailUrl,
+              width: 96,
+              height: 96,
+              radius: 14,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _AddPhotoTile extends StatelessWidget {
+  const _AddPhotoTile({required this.onTap, required this.uploading});
+
+  final VoidCallback? onTap;
+  final int uploading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.field,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: const ValueKey<String>('add-photo'),
+        borderRadius: BorderRadius.circular(14),
+        onTap: uploading > 0 ? null : onTap,
+        child: SizedBox(
+          width: 96,
+          height: 96,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              if (uploading > 0) ...<Widget>[
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Wysyłam ($uploading)',
+                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                ),
+              ] else ...<Widget>[
+                const Icon(
+                  Icons.add_a_photo_outlined,
+                  color: AppColors.primary,
+                  size: 26,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Dodaj',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -684,11 +857,19 @@ class PhotoViewerPage extends StatefulWidget {
   const PhotoViewerPage({
     required this.photos,
     required this.initialIndex,
+    this.canDelete,
+    this.onDelete,
     super.key,
   });
 
   final List<Photo> photos;
   final int initialIndex;
+
+  /// Whether the current user may delete a photo (shows the trash button).
+  final bool Function(Photo photo)? canDelete;
+
+  /// Deletes the photo; true closes the viewer.
+  final Future<bool> Function(Photo photo)? onDelete;
 
   @override
   State<PhotoViewerPage> createState() => _PhotoViewerPageState();
@@ -718,6 +899,19 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
           '${_page + 1} z ${widget.photos.length}',
           style: const TextStyle(fontSize: 15),
         ),
+        actions: <Widget>[
+          if (widget.onDelete != null &&
+              (widget.canDelete?.call(photo) ?? false))
+            IconButton(
+              key: const ValueKey<String>('delete-photo'),
+              tooltip: 'Usuń zdjęcie',
+              icon: const Icon(Icons.delete_outline_rounded),
+              onPressed: () async {
+                final deleted = await widget.onDelete!(photo);
+                if (deleted && context.mounted) Navigator.of(context).pop();
+              },
+            ),
+        ],
       ),
       body: Column(
         children: <Widget>[
