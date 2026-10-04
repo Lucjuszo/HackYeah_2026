@@ -389,25 +389,6 @@ class _AddPlacePageState extends State<AddPlacePage> {
     ),
   );
 
-  Widget _section(String title, Widget child) => Padding(
-    padding: const EdgeInsets.only(top: 28),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: _fontSize,
-            fontWeight: FontWeight.w700,
-            color: AppColors.ink,
-          ),
-        ),
-        const SizedBox(height: 10),
-        child,
-      ],
-    ),
-  );
-
   Widget _fieldLabel(String text) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
     child: Text(
@@ -671,18 +652,25 @@ class _AddPlacePageState extends State<AddPlacePage> {
             : Icon(
                 icon,
                 size: 15,
-                color: selected ? AppColors.white : AppColors.ink,
+                color: selected ? AppColors.white : AppColors.muted,
               ),
-        label: Text(label, style: const TextStyle(fontSize: _fontSize)),
+        label: Text(
+          label,
+          style: TextStyle(
+            fontSize: _fontSize,
+            color: selected ? AppColors.white : AppColors.muted,
+          ),
+        ),
         selected: selected,
         onSelected: (_) => onTap(),
         showCheckmark: false,
         visualDensity: VisualDensity.compact,
         side: BorderSide.none,
-        backgroundColor: AppColors.chip,
+        backgroundColor: AppColors.formField,
         selectedColor: AppColors.primary,
         labelStyle: TextStyle(
-          color: selected ? AppColors.white : AppColors.ink,
+          fontSize: _fontSize,
+          color: selected ? AppColors.white : AppColors.muted,
         ),
       ),
     );
@@ -881,7 +869,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(14),
                   child: Container(
-                    height: 106,
+                    height: 138,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -894,7 +882,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                           height: 52,
                           fit: BoxFit.contain,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 24),
                         Material(
                           color: AppColors.primary,
                           borderRadius: BorderRadius.circular(15),
@@ -907,12 +895,23 @@ class _AddPlacePageState extends State<AddPlacePage> {
                                 horizontal: 13,
                                 vertical: 6,
                               ),
-                              child: Text(
-                                'Dodaj zdjęcia',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.white,
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.add_rounded,
+                                    size: 16,
+                                    color: AppColors.white,
+                                  ),
+                                  SizedBox(width: 5),
+                                  Text(
+                                    'Dodaj zdjęcia',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.white,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
@@ -921,7 +920,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                     ),
                   ),
                 ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 26),
               TextField(
                 key: const ValueKey<String>('new-place-name'),
                 controller: _nameController,
@@ -935,7 +934,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                   error: _nameMissing ? 'Podaj nazwę' : null,
                 ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 28),
               _labeled(
                 'Adres',
                 TextField(
@@ -1000,21 +999,34 @@ class _AddPlacePageState extends State<AddPlacePage> {
                       setState(() => _price = _price == value ? null : value),
                 ),
               ),
-              _section(
+              _labeled(
                 'Udogodnienia',
-                Wrap(
-                  children: <Widget>[
-                    for (final (key, label, icon) in _amenities)
-                      _chip(
-                        label,
-                        _selectedAmenities.contains(key),
-                        () => setState(() {
-                          if (!_selectedAmenities.remove(key)) {
-                            _selectedAmenities.add(key);
-                          }
-                        }),
-                        icon: icon,
-                        key: ValueKey<String>('amenity-$key'),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Dzieli listę _amenities na rzędy po 3 elementy
+                    for (var i = 0; i < _amenities.length; i += 3)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: Row(
+                          children: [
+                            for (final (key, label, icon) in _amenities.skip(i).take(3))
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8.0),
+                                child: _chip(
+                                  label,
+                                  _selectedAmenities.contains(key),
+                                  () => setState(() {
+                                    if (!_selectedAmenities.remove(key)) {
+                                      _selectedAmenities.add(key);
+                                    }
+                                  }),
+                                  icon: icon,
+                                  key: ValueKey<String>('amenity-$key'),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                   ],
                 ),

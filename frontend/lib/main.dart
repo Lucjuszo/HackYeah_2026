@@ -58,7 +58,7 @@ class MiejscowkiApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Miejscówki',
+      title: 'Focus Map',
       theme: buildTheme(),
       home: MapHomePage(
         api: api,
@@ -1288,7 +1288,7 @@ class _MapHomePageState extends State<MapHomePage> {
                         children: <Widget>[
                           const Expanded(
                             child: Text(
-                              'Miejscówki',
+                              'Focus Map',
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
