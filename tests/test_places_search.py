@@ -207,7 +207,7 @@ class TestDeletePlace:
         place_id = created_place["id"]
         photo = client.post(f"/places/{place_id}/photos", files={"file": ("p.jpg", make_image(), "image/jpeg")}).json()
         rate(client, place_id, 4, "anna")
-        client.post(f"/places/{place_id}/comments", json={"text": "Super"})
+        client.post(f"/places/{place_id}/comments", json={"text": "Super", "score": 4})
 
         assert client.delete(f"/places/{place_id}", headers=as_admin()).status_code == 204
         assert client.get(f"/places/{place_id}").status_code == 404

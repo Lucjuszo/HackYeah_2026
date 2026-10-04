@@ -11,6 +11,11 @@ from app.repositories import ratings
 
 COLLECTION = "comments"
 
+# Every opinion has stars. Old ones without them get the author's rating at start (backfill_scores);
+# one whose author never rated the place can't be fixed automatically and is left out everywhere.
+_HAS_SCORE = {"score": {"$ne": None}}  # also excludes a missing field
+_NO_SCORE = {"score": None}  # null or missing
+
 
 class CommentNotFound(Exception):
     pass
@@ -25,6 +30,32 @@ async def ensure_indexes(db: AsyncDatabase) -> None:
     await db[COLLECTION].create_index([("place_id", 1), ("likes", -1), ("created_at", -1)])
     # Mongo sorts a missing field below 0: comments from before likes existed get an explicit 0.
     await db[COLLECTION].update_many({"likes": {"$exists": False}}, {"$set": {"likes": 0, "liked_by": []}})
+    await backfill_scores(db)
+
+
+async def backfill_scores(db: AsyncDatabase, *, default: int | None = None, dry_run: bool = False) -> tuple[int, int]:
+    """Gives every opinion without stars its author's current rating of the place.
+
+    With `default`, opinions whose author never rated the place get that many stars, and the author
+    gets the same rating of the place (so the opinion's stars and the place's average agree).
+    Returns (filled from ratings, filled with the default). Safe to re-run.
+    """
+    from_ratings = defaulted = 0
+    async for doc in db[COLLECTION].find(_NO_SCORE, projection={"place_id": 1, "user_id": 1, "is_mock": 1}):
+        rating = await db[ratings.COLLECTION].find_one({"place_id": doc["place_id"], "user_id": doc["user_id"]})
+        if rating is not None:
+            score = rating["score"]
+            from_ratings += 1
+        elif default is not None:
+            score = default
+            defaulted += 1
+            if not dry_run:
+                await ratings.set_rating(db, doc["place_id"], doc["user_id"], score, is_mock=doc.get("is_mock", False))
+        else:
+            continue
+        if not dry_run:
+            await db[COLLECTION].update_one({"_id": doc["_id"], **_NO_SCORE}, {"$set": {"score": score}})
+    return from_ratings, defaulted
 
 
 def _from_document(doc: dict[str, Any]) -> Comment:
@@ -67,8 +98,8 @@ async def create_comment(
     user_id: str,
     text: str,
     *,
+    score: int,
     user_name: str | None = None,
-    score: int | None = None,
     is_mock: bool = False,
 ) -> Comment:
     doc = {
@@ -88,20 +119,20 @@ async def create_comment(
 
 
 async def count_comments(db: AsyncDatabase, place_id: ObjectId) -> int:
-    return await db[COLLECTION].count_documents({"place_id": place_id})
+    return await db[COLLECTION].count_documents({"place_id": place_id, **_HAS_SCORE})
 
 
 async def list_comments(db: AsyncDatabase, place_id: ObjectId, *, limit: int, skip: int) -> list[Comment]:
     # Most liked first, then newest; _id breaks ties between comments created in the same millisecond.
     order = [("likes", -1), ("created_at", -1), ("_id", -1)]
-    cursor = db[COLLECTION].find({"place_id": place_id}).sort(order).skip(skip).limit(limit)
+    cursor = db[COLLECTION].find({"place_id": place_id, **_HAS_SCORE}).sort(order).skip(skip).limit(limit)
     return await _with_user_scores(db, place_id, [_from_document(doc) async for doc in cursor])
 
 
 async def _modifiable(db: AsyncDatabase, place_id: ObjectId, comment_id: str, actor: AuthUser) -> dict[str, Any]:
     """The comment's filter, if it exists and the actor is its author or an admin."""
     oid = parse_object_id(comment_id)
-    doc = await db[COLLECTION].find_one({"_id": oid, "place_id": place_id}) if oid else None
+    doc = await db[COLLECTION].find_one({"_id": oid, "place_id": place_id, **_HAS_SCORE}) if oid else None
     if doc is None:
         raise CommentNotFound
     if not (actor.is_admin or doc["user_id"] == actor.id):
@@ -133,7 +164,7 @@ async def set_like(db: AsyncDatabase, place_id: ObjectId, comment_id: str, user_
     oid = parse_object_id(comment_id)
     if oid is None:
         raise CommentNotFound
-    query = {"_id": oid, "place_id": place_id}
+    query = {"_id": oid, "place_id": place_id, **_HAS_SCORE}
     if liked:
         condition = {"liked_by": {"$ne": user_id}}
         update = {"$push": {"liked_by": user_id}, "$inc": {"likes": 1}}

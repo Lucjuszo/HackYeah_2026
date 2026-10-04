@@ -38,13 +38,13 @@ class TestCommentScores:
 
     def test_list_shows_authors_rating(self, client, place_url):
         client.put(f"{place_url}/ratings/me", json={"score": 4}, headers=as_user("anna"))
-        client.post(f"{place_url}/comments", json={"text": "Fajnie"}, headers=as_user("anna"))
-        client.post(f"{place_url}/comments", json={"text": "Bez oceny"}, headers=as_user("bartek"))
+        client.post(f"{place_url}/comments", json={"text": "Fajnie", "score": 4}, headers=as_user("anna"))
+        client.post(f"{place_url}/comments", json={"text": "Bez oceny", "score": 4}, headers=as_user("bartek"))
         comments = {c["text"]: c["user_score"] for c in client.get(f"{place_url}/comments").json()}
         assert comments == {"Fajnie": 4, "Bez oceny": None}
 
     def test_follows_rating_changes(self, client, place_url):
-        client.post(f"{place_url}/comments", json={"text": "A"}, headers=as_user("anna"))
+        client.post(f"{place_url}/comments", json={"text": "A", "score": 4}, headers=as_user("anna"))
         client.put(f"{place_url}/ratings/me", json={"score": 2}, headers=as_user("anna"))
         assert client.get(f"{place_url}/comments").json()[0]["user_score"] == 2
         client.delete(f"{place_url}/ratings/me", headers=as_user("anna"))
@@ -52,7 +52,7 @@ class TestCommentScores:
 
     def test_create_and_edit_include_score(self, client, place_url):
         client.put(f"{place_url}/ratings/me", json={"score": 5}, headers=as_user("anna"))
-        comment = client.post(f"{place_url}/comments", json={"text": "A"}, headers=as_user("anna")).json()
+        comment = client.post(f"{place_url}/comments", json={"text": "A", "score": 4}, headers=as_user("anna")).json()
         assert comment["user_score"] == 5
         edited = client.patch(f"{place_url}/comments/{comment['id']}", json={"text": "B"}, headers=as_user("anna")).json()
         assert edited["user_score"] == 5
@@ -60,5 +60,5 @@ class TestCommentScores:
     def test_rating_of_another_place_ignored(self, client, place_url, minimal_payload):
         other = add_place(client, minimal_payload, "Inne", RYNEK)
         client.put(f"/places/{other['id']}/ratings/me", json={"score": 1}, headers=as_user("anna"))
-        client.post(f"{place_url}/comments", json={"text": "A"}, headers=as_user("anna"))
+        client.post(f"{place_url}/comments", json={"text": "A", "score": 4}, headers=as_user("anna"))
         assert client.get(f"{place_url}/comments").json()[0]["user_score"] is None

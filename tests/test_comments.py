@@ -10,8 +10,8 @@ from app.repositories import comments as repo
 from tests.helpers import ANONYMOUS, DEFAULT_USER, as_admin, as_user
 
 
-def comment(client, place_id, text="Super miejsce", user="anna"):
-    return client.post(f"/places/{place_id}/comments", json={"text": text}, headers=as_user(user))
+def comment(client, place_id, text="Super miejsce", user="anna", score=4):
+    return client.post(f"/places/{place_id}/comments", json={"text": text, "score": score}, headers=as_user(user))
 
 
 def comments(client, place_id, **params):
@@ -31,7 +31,7 @@ def test_create(client, created_place):
 
 
 def test_default_mock_user(client, created_place):
-    body = client.post(f"/places/{created_place['id']}/comments", json={"text": "Hej"}).json()
+    body = client.post(f"/places/{created_place['id']}/comments", json={"text": "Hej", "score": 4}).json()
     assert body["user_id"] == DEFAULT_USER
 
 
@@ -53,6 +53,24 @@ def test_comments_are_per_place(client, created_place, minimal_payload):
     comment(client, created_place["id"], text="tu")
     comment(client, other["id"], text="tam")
     assert [c["text"] for c in comments(client, created_place["id"])] == ["tu"]
+
+
+def test_stars_are_stored(client, created_place):
+    body = comment(client, created_place["id"], score=2).json()
+    assert body["score"] == 2
+    assert comments(client, created_place["id"])[0]["score"] == 2
+
+
+@pytest.mark.parametrize("payload", [{"text": "Bez gwiazdek"}, {"text": "x", "score": None}])
+def test_stars_required(client, created_place, payload):
+    response = client.post(f"/places/{created_place['id']}/comments", json=payload)
+    assert response.status_code == 422
+    assert comments(client, created_place["id"]) == []
+
+
+@pytest.mark.parametrize("score", [0, 6, "pięć"])
+def test_invalid_stars(client, created_place, score):
+    assert comment(client, created_place["id"], score=score).status_code == 422
 
 
 @pytest.mark.parametrize("text", ["", "   ", "x" * 2001])
@@ -109,7 +127,7 @@ class TestDelete:
 
 
 def test_anonymous_cannot_comment(client, created_place):
-    response = client.post(f"/places/{created_place['id']}/comments", json={"text": "x"}, headers=ANONYMOUS)
+    response = client.post(f"/places/{created_place['id']}/comments", json={"text": "x", "score": 4}, headers=ANONYMOUS)
     assert response.status_code == 401
     assert comments(client, created_place["id"]) == []
 
@@ -121,7 +139,7 @@ def test_reading_is_public(client, created_place):
 
 def test_author_name_comes_from_token(client, created_place):
     headers = as_user("u-123", name="Anna Kowalska")
-    body = client.post(f"/places/{created_place['id']}/comments", json={"text": "Hej"}, headers=headers).json()
+    body = client.post(f"/places/{created_place['id']}/comments", json={"text": "Hej", "score": 4}, headers=headers).json()
     assert (body["user_id"], body["user_name"]) == ("u-123", "Anna Kowalska")
 
 
@@ -258,3 +276,55 @@ class TestLikes:
         other = client.post("/places", json=minimal_payload).json()
         c = comment(client, created_place["id"]).json()
         assert self.like(client, other["id"], c["id"], as_user("anna")).status_code == 404
+
+
+class TestOldOpinionsWithoutStars:
+    """Opinions from before stars were required: fixed at start, or never shown."""
+
+    @staticmethod
+    def backfill(**kwargs):
+        async def go():
+            mongo = create_client()
+            try:
+                return await repo.backfill_scores(mongo[settings.mongo_db], **kwargs)
+            finally:
+                await mongo.close()
+
+        return asyncio.run(go())
+
+    def without_stars(self, client, db, place_id, user="anna"):
+        c = comment(client, place_id, text=f"stara opinia {user}", user=user).json()
+        db[repo.COLLECTION].update_one({"_id": ObjectId(c["id"])}, {"$unset": {"score": ""}})
+        return c
+
+    def test_get_the_authors_rating(self, client, db, created_place):
+        place_id = created_place["id"]
+        client.put(f"/places/{place_id}/ratings/me", json={"score": 3}, headers=as_user("anna"))
+        old = self.without_stars(client, db, place_id)
+        assert self.backfill() == (1, 0)
+        assert db[repo.COLLECTION].find_one({"_id": ObjectId(old["id"])})["score"] == 3
+        assert comments(client, place_id)[0]["score"] == 3
+
+    def test_without_rating_are_hidden(self, client, db, created_place):
+        place_id = created_place["id"]
+        old = self.without_stars(client, db, place_id)
+        comment(client, place_id, text="z gwiazdkami", user="bartek")
+        assert self.backfill() == (0, 0)  # nothing to take the stars from
+        url = f"/places/{place_id}/comments"
+        response = client.get(url)
+        assert [c["text"] for c in response.json()] == ["z gwiazdkami"]
+        assert response.headers["X-Total-Count"] == "1"
+        assert client.put(f"{url}/{old['id']}/like", headers=as_user("bartek")).status_code == 404
+        assert client.patch(f"{url}/{old['id']}", json={"text": "x"}, headers=as_user("anna")).status_code == 404
+
+    def test_default_gives_stars_and_the_rating(self, client, db, created_place):
+        place_id = created_place["id"]
+        old = self.without_stars(client, db, place_id)
+        assert self.backfill(default=5, dry_run=True) == (0, 1)
+        assert db[repo.COLLECTION].find_one({"_id": ObjectId(old["id"])}).get("score") is None  # dry run
+
+        assert self.backfill(default=5) == (0, 1)
+        assert comments(client, place_id)[0]["score"] == 5
+        assert client.get(f"/places/{place_id}/ratings/me", headers=as_user("anna")).json()["score"] == 5
+        assert client.get(f"/places/{place_id}").json()["rating"] == {"average": 5.0, "count": 1}
+        assert self.backfill(default=5) == (0, 0)  # nothing left
