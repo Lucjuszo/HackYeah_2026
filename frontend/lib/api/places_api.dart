@@ -119,7 +119,12 @@ class PlacesApi {
   }
 
   /// Logged-in request (POST/PUT/PATCH/DELETE or GET); 401 = token rejected (expired, logged out).
-  Future<Object?> _send(String method, String path, {required String token, Object? body}) async {
+  Future<Object?> _send(
+    String method,
+    String path, {
+    required String token,
+    Object? body,
+  }) async {
     final request = http.Request(method, apiUrl.resolve(path))
       ..headers['Authorization'] = 'Bearer $token';
     if (body != null) {
@@ -129,19 +134,30 @@ class PlacesApi {
     }
     final http.Response response;
     try {
-      response = await http.Response.fromStream(await _client.send(request).timeout(timeout));
+      response = await http.Response.fromStream(
+        await _client.send(request).timeout(timeout),
+      );
     } on Exception {
-      throw const ApiException('Brak połączenia z serwerem. Sprawdź, czy backend działa.');
+      throw const ApiException(
+        'Brak połączenia z serwerem. Sprawdź, czy backend działa.',
+      );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(_errorMessage(response), statusCode: response.statusCode);
+      throw ApiException(
+        _errorMessage(response),
+        statusCode: response.statusCode,
+      );
     }
-    return response.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(response.bodyBytes));
+    return response.bodyBytes.isEmpty
+        ? null
+        : jsonDecode(utf8.decode(response.bodyBytes));
   }
 
   static String _errorMessage(http.Response response) {
-    if (response.statusCode == 401) return 'Sesja wygasła. Zaloguj się ponownie.';
-    if (response.statusCode == 429) return 'Za dużo zmian w krótkim czasie. Spróbuj za chwilę.';
+    if (response.statusCode == 401)
+      return 'Sesja wygasła. Zaloguj się ponownie.';
+    if (response.statusCode == 429)
+      return 'Za dużo zmian w krótkim czasie. Spróbuj za chwilę.';
     if (response.statusCode == 403) return 'Nie masz uprawnień do tej zmiany.';
     if (response.statusCode == 404) return 'Nie znaleziono.';
     if (response.statusCode >= 500) {
@@ -196,13 +212,15 @@ class PlacesApi {
   }
 
   /// Where the browser goes to log in (GET /auth/{provider}/login).
-  Uri loginUrl(String provider) => apiUrl.resolve('auth/${Uri.encodeComponent(provider)}/login');
+  Uri loginUrl(String provider) =>
+      apiUrl.resolve('auth/${Uri.encodeComponent(provider)}/login');
 
   /// Configured login providers, e.g. ['github', 'google'].
   Future<List<String>> loginProviders() async {
     final (body, _) = await _get('auth/providers');
     return [
-      for (final provider in ((body! as Json)['providers'] as List? ?? const []))
+      for (final provider
+          in ((body! as Json)['providers'] as List? ?? const []))
         (provider as Json)['name'] as String,
     ];
   }
@@ -217,7 +235,11 @@ class PlacesApi {
   /// The user's score 1–5, null if not rated yet.
   Future<int?> myRating(String placeId, {required String token}) async {
     try {
-      final body = await _send('GET', '${_placePath(placeId)}/ratings/me', token: token);
+      final body = await _send(
+        'GET',
+        '${_placePath(placeId)}/ratings/me',
+        token: token,
+      );
       return (body! as Json)['score'] as int;
     } on ApiException catch (e) {
       if (e.statusCode == 404) return null;
@@ -226,22 +248,53 @@ class PlacesApi {
   }
 
   /// Creates or changes the user's rating; returns the place's new summary.
-  Future<RatingSummary> rate(String placeId, int score, {required String token}) async {
-    final body = await _send('PUT', '${_placePath(placeId)}/ratings/me', token: token, body: {'score': score});
+  Future<RatingSummary> rate(
+    String placeId,
+    int score, {
+    required String token,
+  }) async {
+    final body = await _send(
+      'PUT',
+      '${_placePath(placeId)}/ratings/me',
+      token: token,
+      body: {'score': score},
+    );
     return RatingSummary.fromJson((body! as Json)['summary'] as Json);
   }
 
-  Future<RatingSummary> deleteRating(String placeId, {required String token}) async {
-    final body = await _send('DELETE', '${_placePath(placeId)}/ratings/me', token: token);
+  Future<RatingSummary> deleteRating(
+    String placeId, {
+    required String token,
+  }) async {
+    final body = await _send(
+      'DELETE',
+      '${_placePath(placeId)}/ratings/me',
+      token: token,
+    );
     return RatingSummary.fromJson(body! as Json);
   }
 
-  Future<Comment> addComment(String placeId, String text, {required String token}) async {
-    final body = await _send('POST', '${_placePath(placeId)}/comments', token: token, body: {'text': text});
+  Future<Comment> addComment(
+    String placeId,
+    String text, {
+    required String token,
+    int? score,
+  }) async {
+    final body = await _send(
+      'POST',
+      '${_placePath(placeId)}/comments',
+      token: token,
+      body: <String, Object?>{'text': text, if (score != null) 'score': score},
+    );
     return Comment.fromJson(body! as Json);
   }
 
-  Future<Comment> editComment(String placeId, String commentId, String text, {required String token}) async {
+  Future<Comment> editComment(
+    String placeId,
+    String commentId,
+    String text, {
+    required String token,
+  }) async {
     final body = await _send(
       'PATCH',
       '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}',
@@ -252,7 +305,12 @@ class PlacesApi {
   }
 
   /// Gives ([liked]) or takes back the user's thumbs up; returns the updated comment.
-  Future<Comment> likeComment(String placeId, String commentId, {required bool liked, required String token}) async {
+  Future<Comment> likeComment(
+    String placeId,
+    String commentId, {
+    required bool liked,
+    required String token,
+  }) async {
     final body = await _send(
       liked ? 'PUT' : 'DELETE',
       '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}/like',
@@ -261,8 +319,16 @@ class PlacesApi {
     return Comment.fromJson(body! as Json);
   }
 
-  Future<void> deleteComment(String placeId, String commentId, {required String token}) async {
-    await _send('DELETE', '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}', token: token);
+  Future<void> deleteComment(
+    String placeId,
+    String commentId, {
+    required String token,
+  }) async {
+    await _send(
+      'DELETE',
+      '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}',
+      token: token,
+    );
   }
 
   /// Address of a point; null where there is none (sea, forest).
@@ -281,7 +347,12 @@ class PlacesApi {
 
   /// POST /places (logged in). Returns the created place.
   Future<Place> createPlace(NewPlace place, {required String token}) async {
-    final body = await _send('POST', 'places', token: token, body: place.toJson());
+    final body = await _send(
+      'POST',
+      'places',
+      token: token,
+      body: place.toJson(),
+    );
     return Place.fromJson(body! as Json, apiUrl: apiUrl);
   }
 

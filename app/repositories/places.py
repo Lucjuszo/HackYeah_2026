@@ -18,6 +18,7 @@ from app.models.place import (
     Photo,
     PhotoVariant,
     Place,
+    PlaceCategory,
     PlaceCreate,
     PlaceSort,
     PlaceSummary,
@@ -29,7 +30,7 @@ from app.storage import get_storage
 COLLECTION = "places"
 
 # Fields stored exactly as the model dumps them (mode="json" turns enums into plain str/int for BSON).
-_PLAIN_FIELDS = {"name", "amenities", "opening_hours", "usage_price", "atmosphere", "features"}
+_PLAIN_FIELDS = {"name", "amenities", "opening_hours", "usage_price", "atmosphere", "category", "features"}
 
 
 class PlaceAlreadyExists(Exception):
@@ -121,6 +122,7 @@ def from_document(doc: dict[str, Any]) -> Place:
         opening_hours=doc.get("opening_hours"),
         usage_price=doc.get("usage_price"),
         atmosphere=doc.get("atmosphere"),
+        category=doc.get("category"),
         features=doc.get("features", []),
         menu=doc.get("menu", []),
         osm=doc.get("osm"),
@@ -252,6 +254,7 @@ class PlaceFilter:
     wifi: bool | None = None
     power_outlets: bool | None = None
     atmosphere: Atmosphere | None = None
+    category: PlaceCategory | None = None
     min_rating: float | None = None
     min_price: int | None = None  # price_range.min >= (PLN)
     max_price: int | None = None  # price_range.max <= (PLN); open-ended "60+" never matches
@@ -270,6 +273,8 @@ def _match(f: PlaceFilter) -> dict[str, Any]:
         query["amenities.power_outlets"] = f.power_outlets
     if f.atmosphere is not None:
         query["atmosphere"] = str(f.atmosphere)
+    if f.category is not None:
+        query["category"] = str(f.category)
     if f.min_rating is not None:
         query["rating.average"] = {"$gte": f.min_rating}
     if f.min_price is not None:
@@ -361,6 +366,7 @@ def summary_from_document(doc: dict[str, Any], now: datetime) -> PlaceSummary:
         usage_price=doc.get("usage_price"),
         price_range=doc.get("price_range"),
         atmosphere=doc.get("atmosphere"),
+        category=doc.get("category"),
         rating=doc.get("rating", {}),
         thumbnail_url=(first.thumbnail.url if first.thumbnail else first.url) if first else None,
         photo_count=len(photos),

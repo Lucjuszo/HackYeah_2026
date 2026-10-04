@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'oauth_launcher_base.dart';
 
-/// Desktop: Google login in the system browser, which the backend sends back to a one-off page
+/// Desktop: OAuth login in the system browser, which the backend sends back to a one-off page
 /// served by the app on 127.0.0.1 (the token travels in the URL fragment, so that page reads it
 /// with JavaScript and passes it to the app as a query string).
 class _LoopbackLauncher implements OAuthLauncher {
@@ -18,14 +18,21 @@ class _LoopbackLauncher implements OAuthLauncher {
     server.listen((HttpRequest request) async {
       final response = request.response..headers.contentType = ContentType.html;
       if (request.uri.path == '/callback') {
-        response.write(_page(
-          'Logowanie…',
-          '<script>location.replace("/done?" + location.hash.slice(1));</script>',
-        ));
+        response.write(
+          _page(
+            'Logowanie…',
+            '<script>location.replace("/done?" + location.hash.slice(1));</script>',
+          ),
+        );
       } else if (request.uri.path == '/done') {
         try {
           final result = parseLoginParams(request.uri.queryParameters);
-          response.write(_page('Zalogowano', '<p>Zalogowano. Możesz wrócić do aplikacji Focus Map.</p>'));
+          response.write(
+            _page(
+              'Zalogowano',
+              '<p>Zalogowano. Możesz wrócić do aplikacji Focus Map.</p>',
+            ),
+          );
           if (!completer.isCompleted) completer.complete(result);
         } on LoginException catch (e) {
           response.write(_page('Błąd logowania', '<p>${e.message}</p>'));
@@ -37,17 +44,23 @@ class _LoopbackLauncher implements OAuthLauncher {
       await response.close();
     });
 
-    final url = loginUrl.replace(queryParameters: <String, String>{
-      ...loginUrl.queryParameters,
-      'return_to': returnTo,
-    });
+    final url = loginUrl.replace(
+      queryParameters: <String, String>{
+        ...loginUrl.queryParameters,
+        'return_to': returnTo,
+      },
+    );
     try {
       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        throw const LoginException('Nie udało się otworzyć przeglądarki do logowania.');
+        throw const LoginException(
+          'Nie udało się otworzyć przeglądarki do logowania.',
+        );
       }
       return await completer.future.timeout(
         loginTimeout,
-        onTimeout: () => throw const LoginException('Logowanie przerwane. Spróbuj ponownie.'),
+        onTimeout: () => throw const LoginException(
+          'Logowanie przerwane. Spróbuj ponownie.',
+        ),
       );
     } finally {
       await server.close(force: true);

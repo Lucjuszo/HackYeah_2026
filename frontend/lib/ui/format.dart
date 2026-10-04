@@ -1,6 +1,8 @@
 /// Polish formatting helpers (no intl dependency).
 library;
 
+import 'dart:math' as math;
+
 import '../api/models.dart';
 
 const List<String> weekdayNames = [
@@ -64,6 +66,14 @@ String distance(double meters) {
   if (meters < 1000) return '${(meters / 10).round() * 10} m';
   if (meters < 10000) return '${decimal(meters / 1000)} km';
   return '${(meters / 1000).round()} km';
+}
+
+/// Travel time: "1 min", "25 min", "1 h 5 min", "3 h".
+String travelDuration(Duration d) {
+  final minutes = math.max(1, (d.inSeconds / 60).round());
+  if (minutes < 60) return '$minutes min';
+  final rest = minutes % 60;
+  return rest == 0 ? '${minutes ~/ 60} h' : '${minutes ~/ 60} h $rest min';
 }
 
 String hhmm(DateTime time) =>

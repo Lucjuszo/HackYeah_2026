@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -9,10 +10,12 @@ import 'api/models.dart';
 import 'api/places_api.dart';
 import 'auth/auth.dart';
 import 'services/location_service.dart';
+import 'services/travel_time_service.dart';
 import 'ui/add_place_page.dart';
 import 'ui/format.dart' as fmt;
 import 'ui/location_picker_page.dart';
 import 'ui/place_details_page.dart';
+import 'ui/search_page.dart';
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
 
@@ -22,6 +25,7 @@ void main() {
     MiejscowkiApp(
       api: api,
       auth: AuthController(api: api),
+      travelTimes: TravelTimeService(),
     ),
   );
 }
@@ -33,6 +37,8 @@ class MiejscowkiApp extends StatelessWidget {
     this.locationService = const GeolocatorLocationService(),
     this.showMapTiles = true,
     this.tileProvider,
+    this.travelTimes,
+    this.locateOnStart = true,
     super.key,
   });
 
@@ -45,6 +51,11 @@ class MiejscowkiApp extends StatelessWidget {
 
   /// Where the main map's tiles come from; null = tile.openstreetmap.org (tests use fake images).
   final TileProvider? tileProvider;
+  /// Walk / bike / car times to a place; null hides them (tests: no network).
+  final TravelTimeService? travelTimes;
+
+  /// Start at the device position if the user allows it, else the whole of Poland.
+  final bool locateOnStart;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +69,8 @@ class MiejscowkiApp extends StatelessWidget {
         locationService: locationService,
         showMapTiles: showMapTiles,
         tileProvider: tileProvider,
+        travelTimes: travelTimes,
+        locateOnStart: locateOnStart,
       ),
     );
   }
@@ -115,6 +128,8 @@ class MapHomePage extends StatefulWidget {
     required this.locationService,
     this.showMapTiles = true,
     this.tileProvider,
+    this.travelTimes,
+    this.locateOnStart = true,
     super.key,
   });
 
@@ -123,6 +138,8 @@ class MapHomePage extends StatefulWidget {
   final LocationService locationService;
   final bool showMapTiles;
   final TileProvider? tileProvider;
+  final TravelTimeService? travelTimes;
+  final bool locateOnStart;
 
   @override
   State<MapHomePage> createState() => _MapHomePageState();
@@ -130,7 +147,8 @@ class MapHomePage extends StatefulWidget {
 
 class _MapHomePageState extends State<MapHomePage> {
   static const double _sheetMin = 0.14;
-  static const double _sheetMax = 0.94;
+  // Keep the search, location and filter controls visible above the expanded list.
+  static const double _sheetMax = 0.78;
 
   final _searchController = TextEditingController();
   final _sheetController = DraggableScrollableController();
@@ -146,11 +164,11 @@ class _MapHomePageState extends State<MapHomePage> {
   bool _openNow = false;
   bool _powerOutlets = false;
   Atmosphere? _atmosphere;
-  bool _filtersOpen = false;
 
   // Location: reference point for distances ("Moja lokalizacja", a searched city...)
   LocationChoice _location = LocationChoice.wholeCountry;
   final List<LocationChoice> _recentLocations = <LocationChoice>[];
+  final List<String> _recentSearches = <String>[];
 
   // Results
   List<PlaceSummary> _places = const <PlaceSummary>[];
@@ -165,10 +183,16 @@ class _MapHomePageState extends State<MapHomePage> {
   String? _selectedId;
   bool _sheetExpanded = false;
 
+  /// The user moved the map or picked a place: a late GPS fix must not move the camera.
+  bool _userMovedMap = false;
+
   @override
   void initState() {
     super.initState();
     widget.auth.restore();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(widget.locationService.requestPermission());
+    });
   }
 
   @override
@@ -204,7 +228,10 @@ class _MapHomePageState extends State<MapHomePage> {
   void _fitInitialCamera() {
     if (_initialFitDone || !_mapHasSize) return;
     _initialFitDone = true;
-    _fitPoland();
+    if (!_userMovedMap) {
+      // The device position may have arrived while the size was still unknown.
+      _location.point == null ? _fitPoland() : _showLocation(_location);
+    }
     // flutter_map loads tiles only on map events, which at start may carry an older camera:
     // the tiles of the final view would stay blank until the user moved the map.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -235,10 +262,12 @@ class _MapHomePageState extends State<MapHomePage> {
       maxPrice: _price.maxPrice,
     );
     final point = _location.point;
-    if (point != null && _radius.km != null) {
+    if (_radius.km case final km?) {
+      // Without a chosen location the radius is around the map centre.
+      final center = _mapController.camera.center;
       return PlacesQuery(
-        near: point,
-        radiusM: _radius.km! * 1000,
+        near: point ?? LatLon(center.latitude, center.longitude),
+        radiusM: km * 1000,
         text: common.text,
         wifi: _wifi,
         powerOutlets: _powerOutlets,
@@ -353,6 +382,9 @@ class _MapHomePageState extends State<MapHomePage> {
           auth: widget.auth,
           summary: place,
           distanceM: _distanceTo(place),
+          travelTimes: widget.travelTimes,
+          origin: _location.point,
+          originLabel: _location.isDevice ? null : _location.label,
         ),
       ),
     );
@@ -360,10 +392,90 @@ class _MapHomePageState extends State<MapHomePage> {
     if (mounted) _reload();
   }
 
+  LocationChoice _deviceChoice(LatLon point) =>
+      LocationChoice(label: 'Moja lokalizacja', point: point, isDevice: true);
+
+  /// Where the radius is measured from: the chosen location, else the map centre.
+  LatLng _radiusCenter() {
+    final point = _location.point;
+    return point != null
+        ? LatLng(point.lat, point.lon)
+        : _mapController.camera.center;
+  }
+
+  void _fitRadius(LatLng center, int km) {
+    const distance = Distance();
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints(<LatLng>[
+          for (final bearing in <double>[0, 90, 180, 270])
+            distance.offset(center, km * 1000, bearing),
+        ]),
+        padding: const EdgeInsets.all(24),
+      ),
+    );
+  }
+
+  /// Device position at startup; without it (no permission, no GPS) the map stays on Poland.
+  Future<void> _locateOnStart() async {
+    final LatLon point;
+    try {
+      point = await widget.locationService.currentLocation();
+    } on LocationFailure {
+      return;
+    }
+    if (!mounted || _location != LocationChoice.wholeCountry) return;
+    final choice = _deviceChoice(point);
+    _setLocation(choice);
+    if (_userMovedMap) {
+      _reload(); // distances / travel times from here, the camera stays
+    } else {
+      _showLocation(choice);
+    }
+  }
+
+  void _setLocation(LocationChoice choice) {
+    setState(() {
+      _location = choice;
+      if (choice.point != null) {
+        _recentLocations.removeWhere(
+          (LocationChoice c) => c.label == choice.label,
+        );
+        _recentLocations.insert(0, choice);
+        if (_recentLocations.length > 5) _recentLocations.removeLast();
+      }
+    });
+  }
+
+  /// A radius needs a centre: ask for the device position, else use the map centre.
+  Future<void> _selectRadius(_RadiusFilter radius) async {
+    setState(() => _radius = radius);
+    final km = radius.km;
+    if (km == null) {
+      _reload();
+      return;
+    }
+    if (_location.point == null) {
+      try {
+        final point = await widget.locationService.currentLocation();
+        if (!mounted) return;
+        _setLocation(_deviceChoice(point));
+      } on LocationFailure {
+        _toast('Brak lokalizacji – promień liczony od środka mapy.');
+      }
+      if (!mounted || _radius != radius) return;
+    }
+    _userMovedMap = true;
+    _fitRadius(_radiusCenter(), km);
+    _reload();
+  }
+
   void _showLocation(LocationChoice choice) {
     final bounds = choice.bounds;
     final point = choice.point;
-    if (point == null) {
+    if (point != null && _radius.km != null) {
+      _fitRadius(LatLng(point.lat, point.lon), _radius.km!);
+    } else if (point == null) {
       _fitPoland();
     } else if (bounds != null) {
       _mapController.fitCamera(
@@ -379,7 +491,7 @@ class _MapHomePageState extends State<MapHomePage> {
     } else {
       _mapController.move(
         LatLng(point.lat, point.lon),
-        choice.isDevice ? 15 : 16,
+        choice.isDevice ? 14 : 16,
       );
     }
     _reload();
@@ -396,16 +508,8 @@ class _MapHomePageState extends State<MapHomePage> {
       ),
     );
     if (!mounted || choice == null) return;
-    setState(() {
-      _location = choice;
-      if (choice.point != null) {
-        _recentLocations.removeWhere(
-          (LocationChoice c) => c.label == choice.label,
-        );
-        _recentLocations.insert(0, choice);
-        if (_recentLocations.length > 5) _recentLocations.removeLast();
-      }
-    });
+    _userMovedMap = true;
+    _setLocation(choice);
     _showLocation(choice);
   }
 
@@ -494,7 +598,7 @@ class _MapHomePageState extends State<MapHomePage> {
                         : Icons.radio_button_off_rounded,
                     color: option == value
                         ? AppColors.primary
-                        : const Color(0xFF8A8A8A),
+                        : AppColors.inactiveText,
                   ),
                   title: Text(label(option)),
                   onTap: () {
@@ -516,7 +620,7 @@ class _MapHomePageState extends State<MapHomePage> {
     bool active = false,
     bool chevron = true,
   }) {
-    final foreground = active ? Colors.white : const Color(0xFF222222);
+    final foreground = active ? AppColors.white : AppColors.activeText;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Material(
@@ -618,16 +722,29 @@ class _MapHomePageState extends State<MapHomePage> {
           ? 'Filtruj'
           : 'Filtruj ($_extraFilterCount)',
       chevron: false,
-      active: _filtersOpen || _extraFilterCount > 0,
-      onTap: () => setState(() => _filtersOpen = !_filtersOpen),
+      active: _extraFilterCount > 0,
+      onTap: _showMoreFilters,
     ),
   ];
 
-  Widget _toggle(String label, bool selected, VoidCallback onTap, {Key? key}) {
+  Widget _toggle(
+    String label,
+    bool selected,
+    VoidCallback onTap, {
+    IconData? icon,
+    Key? key,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(right: 6, bottom: 6),
       child: FilterChip(
         key: key,
+        avatar: icon == null
+            ? null
+            : Icon(
+                icon,
+                size: 15,
+                color: selected ? AppColors.white : AppColors.ink,
+              ),
         label: Text(label, style: const TextStyle(fontSize: 12)),
         selected: selected,
         onSelected: (_) => onTap(),
@@ -636,67 +753,104 @@ class _MapHomePageState extends State<MapHomePage> {
         side: BorderSide.none,
         backgroundColor: AppColors.chip,
         selectedColor: AppColors.primary,
-        labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink),
+        labelStyle: TextStyle(
+          color: selected ? AppColors.white : AppColors.ink,
+        ),
       ),
     );
   }
 
-  Widget _moreFilters() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 9),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Wrap(
-            children: <Widget>[
-              _toggle(
-                'Otwarte teraz',
-                _openNow,
-                () => _setFilter(() => _openNow = !_openNow),
-                key: const ValueKey<String>('filter-open-now'),
-              ),
-              _toggle(
-                'Gniazdka',
-                _powerOutlets,
-                () => _setFilter(() => _powerOutlets = !_powerOutlets),
-              ),
-              for (final atmosphere in Atmosphere.values)
-                _toggle(
-                  atmosphere.label,
-                  _atmosphere == atmosphere,
-                  () => _setFilter(
-                    () => _atmosphere = _atmosphere == atmosphere
-                        ? null
-                        : atmosphere,
+  void _showMoreFilters() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setSheetState) {
+          void update(VoidCallback change) {
+            _setFilter(change);
+            setSheetState(() {});
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    'Filtruj',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
-                ),
-            ],
-          ),
-          Row(
-            children: <Widget>[
-              const Icon(
-                Icons.info_outline_rounded,
-                size: 15,
-                color: Color(0xFF656565),
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  'Możesz łączyć kilka filtrów',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
-              ),
-              if (_hasAnyFilter)
-                TextButton(
-                  onPressed: _clearFilters,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                  const SizedBox(height: 10),
+                  Wrap(
+                    children: <Widget>[
+                      _toggle(
+                        'Otwarte teraz',
+                        _openNow,
+                        () => update(() => _openNow = !_openNow),
+                        icon: Icons.schedule_rounded,
+                        key: const ValueKey<String>('filter-open-now'),
+                      ),
+                      _toggle(
+                        'Gniazdka',
+                        _powerOutlets,
+                        () => update(() => _powerOutlets = !_powerOutlets),
+                        icon: Icons.power_rounded,
+                      ),
+                      for (final atmosphere in Atmosphere.values)
+                        _toggle(
+                          atmosphere.label,
+                          _atmosphere == atmosphere,
+                          () => update(
+                            () => _atmosphere = _atmosphere == atmosphere
+                                ? null
+                                : atmosphere,
+                          ),
+                          icon: Icons.graphic_eq_rounded,
+                        ),
+                    ],
                   ),
-                  child: const Text('Wyczyść', style: TextStyle(fontSize: 12)),
-                ),
-            ],
-          ),
-        ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        size: 15,
+                        color: AppColors.infoText,
+                      ),
+                      const SizedBox(width: 5),
+                      const Expanded(
+                        child: Text(
+                          'Możesz łączyć kilka filtrów',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.greyText,
+                          ),
+                        ),
+                      ),
+                      if (_hasAnyFilter)
+                        TextButton(
+                          onPressed: () {
+                            _clearFilters();
+                            setSheetState(() {});
+                          },
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: const Text(
+                            'Wyczyść',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -724,6 +878,31 @@ class _MapHomePageState extends State<MapHomePage> {
     });
   }
 
+  Future<void> _openSearch() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final query = await Navigator.of(context).push<String>(
+      PageRouteBuilder<String>(
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (_, _, _) => SearchPage(
+          initial: _searchController.text,
+          recent: _recentSearches,
+        ),
+        transitionsBuilder: (_, animation, _, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
+    if (!mounted || query == null) return; // back = keep the current search
+    _searchController.text = query;
+    if (query.isNotEmpty) {
+      _recentSearches
+        ..remove(query)
+        ..insert(0, query);
+      if (_recentSearches.length > 6) _recentSearches.removeLast();
+    }
+    _setFilter(() {});
+  }
+
   Widget _header() {
     final locationLabel = _location == LocationChoice.wholeCountry
         ? 'Lokalizacja'
@@ -742,20 +921,22 @@ class _MapHomePageState extends State<MapHomePage> {
               key: const ValueKey<String>('place-search'),
               controller: _searchController,
               textAlignVertical: TextAlignVertical.center,
-              textInputAction: TextInputAction.search,
-              onChanged: (_) {
-                setState(() {});
-                _reloadSoon(const Duration(milliseconds: 350));
-              },
-              onSubmitted: (_) => _reload(),
+              // Typing happens on the search screen: no keyboard over the map.
+              readOnly: true,
+              showCursor: false,
+              enableInteractiveSelection: false,
+              onTap: _openSearch,
               decoration: InputDecoration(
                 hintText: 'Szukaj miejscówki',
                 hintStyle: const TextStyle(
-                  color: Color(0xFF7A7A7A),
+                  color: AppColors.hintText,
                   fontSize: 13,
                 ),
                 prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                prefixIconConstraints: const BoxConstraints(minWidth: 44),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 42,
+                ),
                 suffixIcon: _searchController.text.isEmpty
                     ? null
                     : IconButton(
@@ -767,6 +948,10 @@ class _MapHomePageState extends State<MapHomePage> {
                           _setFilter(() {});
                         },
                       ),
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 42,
+                ),
                 isDense: true,
                 contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
@@ -784,7 +969,7 @@ class _MapHomePageState extends State<MapHomePage> {
               children: <Widget>[
                 Expanded(
                   child: Material(
-                    color: Colors.transparent,
+                    color: AppColors.transparent,
                     child: InkWell(
                       key: const ValueKey<String>('location-picker-trigger'),
                       onTap: _openLocationPicker,
@@ -818,9 +1003,9 @@ class _MapHomePageState extends State<MapHomePage> {
                     ),
                   ),
                 ),
-                Container(width: 1, height: 25, color: const Color(0xFF858585)),
+                Container(width: 1, height: 25, color: AppColors.controlBorder),
                 Material(
-                  color: Colors.transparent,
+                  color: AppColors.transparent,
                   child: InkWell(
                     key: const ValueKey<String>('radius-picker-trigger'),
                     onTap: () => _showOptions<_RadiusFilter>(
@@ -830,8 +1015,7 @@ class _MapHomePageState extends State<MapHomePage> {
                       label: (radius) => radius == _RadiusFilter.none
                           ? 'Bez ograniczenia'
                           : radius.label,
-                      onSelected: (radius) =>
-                          _setFilter(() => _radius = radius),
+                      onSelected: _selectRadius,
                     ),
                     borderRadius: const BorderRadius.horizontal(
                       right: Radius.circular(22),
@@ -842,7 +1026,7 @@ class _MapHomePageState extends State<MapHomePage> {
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
                           Text(
-                            '+ ${_radius.km ?? 0} km',
+                            _radius.km == null ? 'Promień' : '${_radius.km} km',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -870,14 +1054,6 @@ class _MapHomePageState extends State<MapHomePage> {
               child: Row(children: _filterChips()),
             ),
           ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 220),
-            crossFadeState: _filtersOpen
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            firstChild: _moreFilters(),
-            secondChild: const SizedBox(width: double.infinity, height: 0),
-          ),
         ],
       ),
     );
@@ -895,13 +1071,13 @@ class _MapHomePageState extends State<MapHomePage> {
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
-        initialCameraFit: CameraFit.bounds(
-          bounds: polandBounds,
-          padding: const EdgeInsets.all(16),
-        ),
+        // Roughly Poland until the size is known; then _fitInitialCamera. (No initialCameraFit:
+        // flutter_map applies it after the size arrives, over the device position chosen meanwhile.)
+        initialCenter: polandBounds.center,
+        initialZoom: 6,
         minZoom: 4,
         maxZoom: 19,
-        backgroundColor: const Color(0xFFF2EFE9),
+        backgroundColor: AppColors.mapBackground,
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
         ),
@@ -909,6 +1085,7 @@ class _MapHomePageState extends State<MapHomePage> {
           _mapReady = true;
           _fitInitialCamera();
           _reload(); // waits for onMapEvent below if the size isn't known yet
+          if (widget.locateOnStart) _locateOnStart();
         },
         onMapEvent: (MapEvent event) {
           // The real size arrived after start (or the window was resized / rotated):
@@ -920,7 +1097,10 @@ class _MapHomePageState extends State<MapHomePage> {
           }
         },
         onPositionChanged: (MapCamera camera, bool hasGesture) {
-          if (hasGesture) _reloadSoon();
+          if (hasGesture) {
+            _userMovedMap = true;
+            _reloadSoon();
+          }
         },
         onTap: (_, _) {
           if (_selectedId != null) setState(() => _selectedId = null);
@@ -935,6 +1115,27 @@ class _MapHomePageState extends State<MapHomePage> {
             tileProvider: widget.tileProvider,
             reset: _reloadTiles.stream,
           ),
+        if (_radius.km case final km?)
+          Builder(
+            // Rebuilt with the camera: without a location the circle follows the map centre.
+            builder: (BuildContext context) {
+              final camera = MapCamera.of(context);
+              return CircleLayer(
+                circles: <CircleMarker>[
+                  CircleMarker(
+                    point: point != null
+                        ? LatLng(point.lat, point.lon)
+                        : camera.center,
+                    radius: km * 1000,
+                    useRadiusInMeter: true,
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderColor: AppColors.primary,
+                    borderStrokeWidth: 2,
+                  ),
+                ],
+              );
+            },
+          ),
         if (point != null)
           MarkerLayer(
             markers: <Marker>[
@@ -944,11 +1145,11 @@ class _MapHomePageState extends State<MapHomePage> {
                 height: 22,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2F80ED),
+                    color: AppColors.mapMarker,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
+                    border: Border.all(color: AppColors.white, width: 3),
                     boxShadow: const <BoxShadow>[
-                      BoxShadow(color: Color(0x40000000), blurRadius: 6),
+                      BoxShadow(color: AppColors.shadow, blurRadius: 6),
                     ],
                   ),
                 ),
@@ -978,26 +1179,20 @@ class _MapHomePageState extends State<MapHomePage> {
         SimpleAttributionWidget(
           source: const Text('OpenStreetMap contributors'),
           alignment: Alignment.topRight,
-          backgroundColor: Colors.white.withValues(alpha: 0.75),
+          backgroundColor: AppColors.white.withValues(alpha: 0.75),
         ),
       ],
     );
   }
 
   Widget _mapButtons(double bottom) {
-    Widget button(
-      IconData icon,
-      String tooltip,
-      VoidCallback onTap, {
-      Key? key,
-    }) => Padding(
+    Widget button(IconData icon, String tooltip, VoidCallback onTap) => Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Material(
-        color: Colors.white,
+        color: AppColors.white,
         elevation: 2,
         shape: const CircleBorder(),
         child: InkWell(
-          key: key,
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: Tooltip(
@@ -1021,10 +1216,6 @@ class _MapHomePageState extends State<MapHomePage> {
               'Wróć do: ${_location.label}',
               () => _showLocation(_location),
             ),
-          button(Icons.public_rounded, 'Cała Polska', () {
-            setState(() => _location = LocationChoice.wholeCountry);
-            _showLocation(LocationChoice.wholeCountry);
-          }, key: const ValueKey<String>('show-poland')),
         ],
       ),
     );
@@ -1037,7 +1228,11 @@ class _MapHomePageState extends State<MapHomePage> {
     final shown = _places.length < _total
         ? ' (pokazano ${_places.length})'
         : '';
-    final where = _sort == PlaceSort.distance ? 'w pobliżu' : 'na mapie';
+    final where = _radius.km != null
+        ? 'w promieniu ${_radius.km} km'
+        : _sort == PlaceSort.distance
+        ? 'w pobliżu'
+        : 'na mapie';
     return '${fmt.placesCount(_total)} $where$shown';
   }
 
@@ -1103,22 +1298,26 @@ class _MapHomePageState extends State<MapHomePage> {
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              decoration: const BoxDecoration(
-                color: AppColors.sheet,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Color(0x19000000),
-                    blurRadius: 12,
-                    offset: Offset(0, -2),
-                  ),
-                ],
+              decoration: BoxDecoration(
+                color: _sheetExpanded ? AppColors.background : AppColors.sheet,
+                borderRadius: _sheetExpanded
+                    ? BorderRadius.zero
+                    : const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: _sheetExpanded
+                    ? null
+                    : const <BoxShadow>[
+                        BoxShadow(
+                          color: AppColors.sheetShadow,
+                          blurRadius: 12,
+                          offset: Offset(0, -2),
+                        ),
+                      ],
               ),
               child: Stack(
                 children: <Widget>[
                   ListView(
                     controller: scrollController,
-                    cacheExtent: 1600,
+                    scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 92),
                     children: <Widget>[
                       const SizedBox(height: 22),
@@ -1181,7 +1380,7 @@ class _MapHomePageState extends State<MapHomePage> {
                           width: 46,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFB8B8B8),
+                            color: AppColors.sheetHandle,
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
@@ -1200,7 +1399,11 @@ class _MapHomePageState extends State<MapHomePage> {
                         onTap: _openAddPlace,
                         child: const Padding(
                           padding: EdgeInsets.all(14),
-                          child: Icon(Icons.add_rounded, size: 25),
+                          child: Icon(
+                            Icons.add_rounded,
+                            size: 25,
+                            color: AppColors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -1219,60 +1422,85 @@ class _MapHomePageState extends State<MapHomePage> {
         .firstOrNull;
     return Scaffold(
       body: SafeArea(
+        top: false,
         bottom: false,
-        child: Column(
-          children: <Widget>[
-            _header(),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final sheetTop = constraints.maxHeight * _sheetMin;
-                  return Stack(
-                    children: <Widget>[
-                      _map(),
-                      if (_error != null && _places.isNotEmpty)
-                        Positioned(
-                          top: 10,
-                          left: 16,
-                          right: 16,
-                          child: Material(
-                            color: AppColors.closed,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              child: Text(
-                                _error!,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final sheetTop = constraints.maxHeight * _sheetMin;
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                Positioned.fill(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    color: _sheetExpanded
+                        ? AppColors.background
+                        : AppColors.transparent,
+                  ),
+                ),
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _sheetExpanded ? 0 : 1,
+                  child: IgnorePointer(ignoring: _sheetExpanded, child: _map()),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(top: true, bottom: false, child: _header()),
+                ),
+                if (!_sheetExpanded && _error != null && _places.isNotEmpty)
+                  Positioned(
+                    top: 190,
+                    left: 16,
+                    right: 16,
+                    child: Material(
+                      color: AppColors.closed,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(
+                            color: AppColors.white,
+                            fontSize: 12,
                           ),
                         ),
-                      _mapButtons(sheetTop + (selected != null ? 150 : 16)),
-                      if (selected != null)
-                        Positioned(
-                          left: 12,
-                          right: 12,
-                          bottom: sheetTop + 10,
-                          child: _PlacePreviewCard(
-                            place: selected,
-                            distanceM: _distanceTo(selected),
-                            onTap: () => _openDetails(selected),
-                            onClose: () => setState(() => _selectedId = null),
-                          ),
+                      ),
+                    ),
+                  ),
+                _mapButtons(sheetTop + (selected != null ? 172 : 16)),
+                if (selected != null)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: sheetTop + 10,
+                    child: _PlacePreviewCard(
+                      place: selected,
+                      distanceM: _distanceTo(selected),
+                      travelTimes: switch ((
+                        widget.travelTimes,
+                        _location.point,
+                      )) {
+                        (final service?, final origin?) => TravelTimesLine(
+                          service: service,
+                          from: origin,
+                          to: selected.location,
+                          fontSize: 11,
                         ),
-                      _spotSheet(),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+                        _ => null,
+                      },
+                      onTap: () => _openDetails(selected),
+                      onClose: () => setState(() => _selectedId = null),
+                    ),
+                  ),
+                _spotSheet(),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1286,10 +1514,12 @@ class _PlacePreviewCard extends StatelessWidget {
     required this.onTap,
     required this.onClose,
     this.distanceM,
+    this.travelTimes,
   });
 
   final PlaceSummary place;
   final double? distanceM;
+  final Widget? travelTimes;
   final VoidCallback onTap;
   final VoidCallback onClose;
 
@@ -1297,9 +1527,9 @@ class _PlacePreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       key: const ValueKey<String>('place-preview'),
-      color: Colors.white,
+      color: AppColors.white,
       elevation: 6,
-      shadowColor: const Color(0x40000000),
+      shadowColor: AppColors.shadow,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -1345,6 +1575,10 @@ class _PlacePreviewCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     OpenStatusLine(place: place, fontSize: 11),
+                    if (travelTimes case final line?) ...<Widget>[
+                      const SizedBox(height: 4),
+                      line,
+                    ],
                     const SizedBox(height: 6),
                     const Text(
                       'Zobacz szczegóły ›',
@@ -1386,6 +1620,7 @@ class SpotListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = fmt.priceLabel(place.priceRange, place.usagePrice);
+    final atmosphere = place.atmosphere;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -1399,7 +1634,17 @@ class SpotListTile extends StatelessWidget {
           children: <Widget>[
             Stack(
               children: <Widget>[
-                PlaceImage(url: place.thumbnailUrl, width: 108, height: 108),
+                PlaceImage(url: place.thumbnailUrl, width: 126, height: 126),
+                if (atmosphere != null)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Pill(
+                      atmosphere.label,
+                      color: AppColors.placeMarker,
+                      textColor: AppColors.white,
+                    ),
+                  ),
                 if (place.photoCount > 1)
                   Positioned(
                     right: 6,
@@ -1410,7 +1655,7 @@ class SpotListTile extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0x99000000),
+                        color: AppColors.imageOverlay,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -1419,14 +1664,14 @@ class SpotListTile extends StatelessWidget {
                           const Icon(
                             Icons.photo_library_outlined,
                             size: 10,
-                            color: Colors.white,
+                            color: AppColors.white,
                           ),
                           const SizedBox(width: 3),
                           Text(
                             '${place.photoCount}',
                             style: const TextStyle(
                               fontSize: 10,
-                              color: Colors.white,
+                              color: AppColors.white,
                             ),
                           ),
                         ],

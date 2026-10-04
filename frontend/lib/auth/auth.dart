@@ -15,7 +15,8 @@ class StoredToken {
   final DateTime expiresAt;
 
   /// A minute of margin: a token about to expire would fail mid-request.
-  bool get isValid => DateTime.now().isBefore(expiresAt.subtract(const Duration(minutes: 1)));
+  bool get isValid =>
+      DateTime.now().isBefore(expiresAt.subtract(const Duration(minutes: 1)));
 }
 
 abstract class TokenStore {
@@ -66,7 +67,7 @@ class MemoryTokenStore implements TokenStore {
   Future<void> clear() async => token = null;
 }
 
-/// Login state: our access token (GitHub or Google via the backend), kept between app starts,
+/// Login state: our GitHub access token via the backend, kept between app starts,
 /// and who is logged in.
 class AuthController {
   AuthController({
@@ -110,13 +111,18 @@ class AuthController {
         throw e;
       });
 
-  /// Logs in with [provider] ('github' / 'google'); throws [LoginException].
+  /// Logs in with the GitHub [provider]; throws [LoginException].
   ///
   /// Call it straight from a tap handler, before any other `await`: on the web the login opens a
   /// popup, which browsers allow only as a direct reaction to a click.
   Future<String> login(String provider) {
-    return _launcher.login(api.loginUrl(provider)).then((LoginResult result) async {
-      final stored = StoredToken(result.accessToken, DateTime.now().add(Duration(seconds: result.expiresIn)));
+    return _launcher.login(api.loginUrl(provider)).then((
+      LoginResult result,
+    ) async {
+      final stored = StoredToken(
+        result.accessToken,
+        DateTime.now().add(Duration(seconds: result.expiresIn)),
+      );
       _token = stored;
       _user = null;
       try {

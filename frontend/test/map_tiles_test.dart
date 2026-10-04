@@ -56,7 +56,7 @@ Future<ui.Image> _decodePng(WidgetTester tester) async {
   return image!;
 }
 
-Future<void> startApp(WidgetTester tester, {required Size firstSize}) async {
+Future<void> startApp(WidgetTester tester, {required Size firstSize, bool locateOnStart = false}) async {
   // The test font is much wider than real fonts: ignore overflow warnings (layout isn't checked here).
   final original = FlutterError.onError;
   FlutterError.onError = (FlutterErrorDetails details) {
@@ -74,6 +74,7 @@ Future<void> startApp(WidgetTester tester, {required Size firstSize}) async {
       auth: AuthController(api: backend.api(), store: MemoryTokenStore(), launcher: FakeOAuthLauncher()),
       locationService: FakeLocationService(result: const LatLon(50.06, 19.94)),
       tileProvider: tileProvider,
+      locateOnStart: locateOnStart,
     ),
   );
 }
@@ -85,11 +86,11 @@ List<TileImage> drawnTiles(WidgetTester tester) => [
     (tile as dynamic).tileImage as TileImage,
 ];
 
-void expectPolandShown(WidgetTester tester) {
+/// Poland fits at zoom ~7, flutter_map's default camera (Kyiv) is zoom 13, the device position 14.
+void expectTilesShown(WidgetTester tester, {required int zoom}) {
   final tiles = drawnTiles(tester);
   expect(tiles, isNotEmpty);
-  // Poland fits at zoom ~7, flutter_map's default camera (Kyiv) is zoom 13.
-  expect(tiles.map((t) => t.coordinates.z).toSet(), {7});
+  expect(tiles.map((t) => t.coordinates.z).toSet(), {zoom});
   final blank = [for (final t in tiles) if (t.imageInfo == null) t.coordinates];
   expect(blank, isEmpty, reason: 'tiles never loaded: $blank');
 }
@@ -104,7 +105,7 @@ void main() {
   testWidgets('kafelki mapy są widoczne od razu po starcie, bez przesuwania', (tester) async {
     await startApp(tester, firstSize: const Size(900, 1000));
     await settle(tester);
-    expectPolandShown(tester);
+    expectTilesShown(tester, zoom: 7);
   });
 
   testWidgets('kafelki są widoczne, gdy ekran ma rozmiar dopiero po starcie', (tester) async {
@@ -113,6 +114,14 @@ void main() {
     await tester.pump();
     tester.view.physicalSize = const Size(900, 1000);
     await settle(tester);
-    expectPolandShown(tester);
+    expectTilesShown(tester, zoom: 7);
+  });
+
+  testWidgets('start z lokalizacji urządzenia: kafelki okolicy są widoczne bez przesuwania', (tester) async {
+    await startApp(tester, firstSize: Size.zero, locateOnStart: true);
+    await tester.pump();
+    tester.view.physicalSize = const Size(900, 1000);
+    await settle(tester);
+    expectTilesShown(tester, zoom: 14);
   });
 }

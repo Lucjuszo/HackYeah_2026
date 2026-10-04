@@ -124,6 +124,12 @@ class TestProviders:
         assert query["state"][0]  # anti-CSRF state, kept in the session cookie
         assert "session" in response.cookies
 
+    def test_login_uses_configured_public_callback_url(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "oauth_callback_base_url", "http://10.250.161.196:8000")
+        response = client.get("/auth/github/login", headers=ANONYMOUS, follow_redirects=False)
+        query = parse_qs(urlparse(response.headers["location"]).query)
+        assert query["redirect_uri"] == ["http://10.250.161.196:8000/auth/github/callback"]
+
     @pytest.mark.parametrize("path", ["/auth/facebook/login", "/auth/facebook/callback"])
     def test_unknown_provider(self, client, path):
         assert client.get(path, headers=ANONYMOUS).status_code == 404

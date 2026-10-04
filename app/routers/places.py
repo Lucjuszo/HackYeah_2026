@@ -4,7 +4,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.auth import CurrentUser
 from app.db import local_now
-from app.models.place import Atmosphere, Coordinates, OsmRef, Place, PlaceCreate, PlaceSort, PlaceSummary, PlaceUpdate
+from app.models.place import (
+    Atmosphere,
+    Coordinates,
+    OsmRef,
+    Place,
+    PlaceCategory,
+    PlaceCreate,
+    PlaceSort,
+    PlaceSummary,
+    PlaceUpdate,
+)
 from app.repositories import places as repo
 from app.routers.deps import Db
 from app.storage import get_storage
@@ -50,6 +60,7 @@ def place_filter(
     wifi: bool | None = None,
     power_outlets: bool | None = None,
     atmosphere: Atmosphere | None = None,
+    category: PlaceCategory | None = None,
     min_rating: Annotated[float | None, Query(ge=1, le=5)] = None,
     min_price: Annotated[int | None, Query(ge=0, description="PLN; price_range.min >= this")] = None,
     max_price: Annotated[
@@ -72,6 +83,7 @@ def place_filter(
         wifi=wifi,
         power_outlets=power_outlets,
         atmosphere=atmosphere,
+        category=category,
         min_rating=min_rating,
         min_price=min_price,
         max_price=max_price,

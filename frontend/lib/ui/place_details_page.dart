@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/models.dart';
 import '../api/places_api.dart';
 import '../auth/auth.dart';
+import '../services/travel_time_service.dart';
 import 'format.dart' as fmt;
 import 'login_sheet.dart';
 import 'theme.dart';
@@ -15,6 +16,9 @@ class PlaceDetailsPage extends StatefulWidget {
     required this.auth,
     required this.summary,
     this.distanceM,
+    this.travelTimes,
+    this.origin,
+    this.originLabel,
     super.key,
   });
 
@@ -24,6 +28,13 @@ class PlaceDetailsPage extends StatefulWidget {
   /// Shown immediately while the full record loads.
   final PlaceSummary summary;
   final double? distanceM;
+
+  /// Route times from [origin] (device position or the chosen city); hidden without both.
+  final TravelTimeService? travelTimes;
+  final LatLon? origin;
+
+  /// Where [origin] is, shown when it isn't the device position.
+  final String? originLabel;
 
   @override
   State<PlaceDetailsPage> createState() => _PlaceDetailsPageState();
@@ -149,12 +160,18 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   Future<void> _postComment() async {
     final text = _commentController.text.trim();
     if (text.isEmpty || _posting) return;
+    final score = _myScore;
+    if (score == null) {
+      _toast('Wybierz ocenę gwiazdkami, aby dodać komentarz.');
+      return;
+    }
     await _withLogin(
       (String token) => _busy((bool v) => _posting = v, () async {
         final comment = await widget.api.addComment(
           _placeId,
           text,
           token: token,
+          score: score,
         );
         if (!mounted) return;
         _commentController.clear();
@@ -306,7 +323,7 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
             pinned: true,
             expandedHeight: 260,
             backgroundColor: AppColors.background,
-            surfaceTintColor: Colors.transparent,
+            surfaceTintColor: AppColors.transparent,
             leading: Padding(
               padding: const EdgeInsets.all(8),
               child: CircleAvatar(
@@ -476,6 +493,19 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
             ),
           ],
         ),
+        if ((widget.travelTimes, widget.origin) case (
+          final service?,
+          final origin?,
+        )) ...<Widget>[
+          const SizedBox(height: 6),
+          TravelTimesLine(
+            service: service,
+            from: origin,
+            to: summary.location,
+            fromLabel: widget.originLabel,
+            fontSize: 13,
+          ),
+        ],
         const SizedBox(height: 6),
         OpenStatusLine(place: summary, fontSize: 13),
         if (price != null || atmosphere != null) ...<Widget>[
@@ -504,16 +534,13 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
       children: <Widget>[
         _RatingSummaryCard(rating: rating),
         const SizedBox(height: 14),
-        _YourRating(
+        _ReviewComposer(
           score: _myScore,
-          busy: _ratingBusy,
+          ratingBusy: _ratingBusy,
+          posting: _posting,
+          controller: _commentController,
           onRate: _rate,
           onRemove: _myScore == null ? null : _removeRating,
-        ),
-        const SizedBox(height: 14),
-        _CommentComposer(
-          controller: _commentController,
-          posting: _posting,
           onSend: _postComment,
         ),
         const SizedBox(height: 6),
@@ -642,12 +669,12 @@ class _PhotoHeaderState extends State<_PhotoHeader> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0x99000000),
+                color: AppColors.imageOverlay,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 '${_page + 1}/${widget.photos.length}',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
+                style: const TextStyle(color: AppColors.white, fontSize: 12),
               ),
             ),
           ),
@@ -715,10 +742,10 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
   Widget build(BuildContext context) {
     final photo = widget.photos[_page];
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.black,
+        foregroundColor: AppColors.white,
         title: Text(
           '${_page + 1} z ${widget.photos.length}',
           style: const TextStyle(fontSize: 15),
@@ -739,7 +766,7 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
                     fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => const Icon(
                       Icons.broken_image_outlined,
-                      color: Colors.white54,
+                      color: AppColors.white54,
                       size: 48,
                     ),
                   ),
@@ -755,7 +782,7 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
                   'Dodał(a): ${photo.uploadedByName}',
                 fmt.date(photo.createdAt),
               ].join(' · '),
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: const TextStyle(color: AppColors.white70, fontSize: 12),
             ),
           ),
         ],
@@ -846,7 +873,7 @@ class _OpeningHoursDisclosure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      data: Theme.of(context).copyWith(dividerColor: AppColors.transparent),
       child: ExpansionTile(
         initiallyExpanded: true,
         tilePadding: EdgeInsets.zero,
@@ -1071,7 +1098,7 @@ class _CommentTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE6E6E6))),
+        border: Border(bottom: BorderSide(color: AppColors.lightDivider)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1111,6 +1138,10 @@ class _CommentTile extends StatelessWidget {
                   ),
                   style: const TextStyle(fontSize: 13),
                 ),
+                if (comment.score != null) ...<Widget>[
+                  const SizedBox(height: 3),
+                  RatingStars(rating: comment.score!.toDouble(), size: 14),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   comment.text,
@@ -1180,123 +1211,129 @@ class _CommentTile extends StatelessWidget {
   }
 }
 
-/// "Twoja ocena": five tappable stars, like the rating summary above.
-class _YourRating extends StatelessWidget {
-  const _YourRating({
+/// One review box: the user can submit a rating alone or add an optional comment.
+class _ReviewComposer extends StatelessWidget {
+  const _ReviewComposer({
     required this.score,
-    required this.busy,
+    required this.ratingBusy,
+    required this.posting,
+    required this.controller,
     required this.onRate,
+    required this.onSend,
     this.onRemove,
   });
 
   final int? score;
-  final bool busy;
+  final bool ratingBusy;
+  final bool posting;
+  final TextEditingController controller;
   final ValueChanged<int> onRate;
+  final VoidCallback onSend;
   final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Text(
-          score == null ? 'Oceń to miejsce' : 'Twoja ocena',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(width: 8),
-        for (var i = 1; i <= 5; i++)
-          IconButton(
-            key: ValueKey<String>('rate-$i'),
-            tooltip: '$i / 5',
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: busy ? null : () => onRate(i),
-            icon: Icon(
-              i <= (score ?? 0)
-                  ? Icons.star_rounded
-                  : Icons.star_outline_rounded,
-              size: 26,
-              color: i <= (score ?? 0) ? AppColors.primary : AppColors.muted,
-            ),
-          ),
-        const Spacer(),
-        if (busy)
-          const SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        else if (onRemove != null)
-          TextButton(
-            key: const ValueKey<String>('remove-rating'),
-            onPressed: onRemove,
-            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-            child: const Text('Usuń', style: TextStyle(fontSize: 12)),
-          ),
-      ],
-    );
-  }
-}
-
-/// "Napisz opinię…" field, styled like the search fields.
-class _CommentComposer extends StatelessWidget {
-  const _CommentComposer({
-    required this.controller,
-    required this.posting,
-    required this.onSend,
-  });
-
-  final TextEditingController controller;
-  final bool posting;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.only(left: 14, right: 4),
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 4),
       decoration: BoxDecoration(
         color: AppColors.formField,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Expanded(
-            child: TextField(
-              key: const ValueKey<String>('comment-input'),
-              controller: controller,
-              minLines: 1,
-              maxLines: 5,
-              maxLength: 2000,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'Napisz opinię…',
-                border: InputBorder.none,
-                counterText: '',
-                contentPadding: EdgeInsets.symmetric(vertical: 12),
+          Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text(
+                  'Twoja opinia',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 2),
-            child: posting
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : IconButton(
-                    key: const ValueKey<String>('comment-send'),
-                    tooltip: 'Wyślij',
-                    onPressed: onSend,
-                    icon: const Icon(
-                      Icons.send_rounded,
-                      color: AppColors.primary,
-                    ),
+              if (ratingBusy)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else if (onRemove != null)
+                TextButton(
+                  key: const ValueKey<String>('remove-rating'),
+                  onPressed: onRemove,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
                   ),
+                  child: const Text('Usuń', style: TextStyle(fontSize: 12)),
+                ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              for (var i = 1; i <= 5; i++)
+                IconButton(
+                  key: ValueKey<String>('rate-$i'),
+                  tooltip: '$i / 5',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 34,
+                    minHeight: 34,
+                  ),
+                  onPressed: ratingBusy ? null : () => onRate(i),
+                  icon: Icon(
+                    i <= (score ?? 0)
+                        ? Icons.star_rounded
+                        : Icons.star_outline_rounded,
+                    size: 27,
+                    color: i <= (score ?? 0)
+                        ? AppColors.primary
+                        : AppColors.muted,
+                  ),
+                ),
+            ],
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              Expanded(
+                child: TextField(
+                  key: const ValueKey<String>('comment-input'),
+                  controller: controller,
+                  minLines: 1,
+                  maxLines: 5,
+                  maxLength: 2000,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    hintText: 'Dodaj komentarz (opcjonalnie)…',
+                    border: InputBorder.none,
+                    counterText: '',
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: posting
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : IconButton(
+                        key: const ValueKey<String>('comment-send'),
+                        tooltip: 'Dodaj opinię',
+                        onPressed: onSend,
+                        icon: const Icon(
+                          Icons.send_rounded,
+                          color: AppColors.primary,
+                        ),
+                      ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1373,7 +1410,7 @@ class _EditCommentSheetState extends State<_EditCommentSheet> {
               onPressed: _save,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.white,
                 padding: const EdgeInsets.symmetric(vertical: 15),
               ),
               child: const Text('Zapisz'),

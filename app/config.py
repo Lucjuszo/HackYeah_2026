@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     github_client_secret: SecretStr | None = None
     google_client_id: str | None = None
     google_client_secret: SecretStr | None = None
+    # Public API origin used in the provider callback URL. This must match the
+    # callback registered in GitHub/Google exactly; it is especially important
+    # when the app is opened on a phone via a LAN address instead of localhost.
+    oauth_callback_base_url: str | None = None
     # Where the OAuth callback sends the browser, with "#access_token=..." appended (the frontend).
     # Unset: the callback answers with JSON, handy for testing without a frontend.
     auth_redirect_url: str | None = None
