@@ -157,7 +157,6 @@ class _MapHomePageState extends State<MapHomePage> {
   bool _openNow = false;
   bool _powerOutlets = false;
   Atmosphere? _atmosphere;
-  bool _filtersOpen = false;
 
   // Location: reference point for distances ("Moja lokalizacja", a searched city...)
   LocationChoice _location = LocationChoice.wholeCountry;
@@ -685,16 +684,29 @@ class _MapHomePageState extends State<MapHomePage> {
           ? 'Filtruj'
           : 'Filtruj ($_extraFilterCount)',
       chevron: false,
-      active: _filtersOpen || _extraFilterCount > 0,
-      onTap: () => setState(() => _filtersOpen = !_filtersOpen),
+      active: _extraFilterCount > 0,
+      onTap: _showMoreFilters,
     ),
   ];
 
-  Widget _toggle(String label, bool selected, VoidCallback onTap, {Key? key}) {
+  Widget _toggle(
+    String label,
+    bool selected,
+    VoidCallback onTap, {
+    IconData? icon,
+    Key? key,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(right: 6, bottom: 6),
       child: FilterChip(
         key: key,
+        avatar: icon == null
+            ? null
+            : Icon(
+                icon,
+                size: 15,
+                color: selected ? AppColors.white : AppColors.ink,
+              ),
         label: Text(label, style: const TextStyle(fontSize: 12)),
         selected: selected,
         onSelected: (_) => onTap(),
@@ -710,65 +722,97 @@ class _MapHomePageState extends State<MapHomePage> {
     );
   }
 
-  Widget _moreFilters() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 9),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Wrap(
-            children: <Widget>[
-              _toggle(
-                'Otwarte teraz',
-                _openNow,
-                () => _setFilter(() => _openNow = !_openNow),
-                key: const ValueKey<String>('filter-open-now'),
-              ),
-              _toggle(
-                'Gniazdka',
-                _powerOutlets,
-                () => _setFilter(() => _powerOutlets = !_powerOutlets),
-              ),
-              for (final atmosphere in Atmosphere.values)
-                _toggle(
-                  atmosphere.label,
-                  _atmosphere == atmosphere,
-                  () => _setFilter(
-                    () => _atmosphere = _atmosphere == atmosphere
-                        ? null
-                        : atmosphere,
+  void _showMoreFilters() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      builder: (BuildContext sheetContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setSheetState) {
+          void update(VoidCallback change) {
+            _setFilter(change);
+            setSheetState(() {});
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    'Filtruj',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                   ),
-                ),
-            ],
-          ),
-          Row(
-            children: <Widget>[
-              const Icon(
-                Icons.info_outline_rounded,
-                size: 15,
-                color: AppColors.infoText,
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  'Możesz łączyć kilka filtrów',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.greyText,
+                  const SizedBox(height: 10),
+                  Wrap(
+                    children: <Widget>[
+                      _toggle(
+                        'Otwarte teraz',
+                        _openNow,
+                        () => update(() => _openNow = !_openNow),
+                        icon: Icons.schedule_rounded,
+                        key: const ValueKey<String>('filter-open-now'),
+                      ),
+                      _toggle(
+                        'Gniazdka',
+                        _powerOutlets,
+                        () => update(() => _powerOutlets = !_powerOutlets),
+                        icon: Icons.power_rounded,
+                      ),
+                      for (final atmosphere in Atmosphere.values)
+                        _toggle(
+                          atmosphere.label,
+                          _atmosphere == atmosphere,
+                          () => update(
+                            () => _atmosphere = _atmosphere == atmosphere
+                                ? null
+                                : atmosphere,
+                          ),
+                          icon: Icons.graphic_eq_rounded,
+                        ),
+                    ],
                   ),
-                ),
-              ),
-              if (_hasAnyFilter)
-                TextButton(
-                  onPressed: _clearFilters,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.info_outline_rounded,
+                        size: 15,
+                        color: AppColors.infoText,
+                      ),
+                      const SizedBox(width: 5),
+                      const Expanded(
+                        child: Text(
+                          'Możesz łączyć kilka filtrów',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.greyText,
+                          ),
+                        ),
+                      ),
+                      if (_hasAnyFilter)
+                        TextButton(
+                          onPressed: () {
+                            _clearFilters();
+                            setSheetState(() {});
+                          },
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: const Text(
+                            'Wyczyść',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                    ],
                   ),
-                  child: const Text('Wyczyść', style: TextStyle(fontSize: 12)),
-                ),
-            ],
-          ),
-        ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -971,14 +1015,6 @@ class _MapHomePageState extends State<MapHomePage> {
               physics: const BouncingScrollPhysics(),
               child: Row(children: _filterChips()),
             ),
-          ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 220),
-            crossFadeState: _filtersOpen
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            firstChild: _moreFilters(),
-            secondChild: const SizedBox(width: double.infinity, height: 0),
           ),
         ],
       ),
@@ -1220,16 +1256,20 @@ class _MapHomePageState extends State<MapHomePage> {
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              decoration: const BoxDecoration(
-                color: AppColors.sheet,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.sheetShadow,
-                    blurRadius: 12,
-                    offset: Offset(0, -2),
-                  ),
-                ],
+              decoration: BoxDecoration(
+                color: _sheetExpanded ? AppColors.background : AppColors.sheet,
+                borderRadius: _sheetExpanded
+                    ? BorderRadius.zero
+                    : const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: _sheetExpanded
+                    ? null
+                    : const <BoxShadow>[
+                        BoxShadow(
+                          color: AppColors.sheetShadow,
+                          blurRadius: 12,
+                          offset: Offset(0, -2),
+                        ),
+                      ],
               ),
               child: Stack(
                 children: <Widget>[
@@ -1298,7 +1338,7 @@ class _MapHomePageState extends State<MapHomePage> {
                           width: 46,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: AppColors.loading,
+                            color: AppColors.sheetHandle,
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
@@ -1317,7 +1357,11 @@ class _MapHomePageState extends State<MapHomePage> {
                         onTap: _openAddPlace,
                         child: const Padding(
                           padding: EdgeInsets.all(14),
-                          child: Icon(Icons.add_rounded, size: 25),
+                          child: Icon(
+                            Icons.add_rounded,
+                            size: 25,
+                            color: AppColors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -1344,6 +1388,14 @@ class _MapHomePageState extends State<MapHomePage> {
             return Stack(
               fit: StackFit.expand,
               children: <Widget>[
+                Positioned.fill(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    color: _sheetExpanded
+                        ? AppColors.background
+                        : AppColors.transparent,
+                  ),
+                ),
                 AnimatedOpacity(
                   duration: const Duration(milliseconds: 180),
                   opacity: _sheetExpanded ? 0 : 1,

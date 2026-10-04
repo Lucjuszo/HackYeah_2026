@@ -29,6 +29,7 @@ flutter:
   assets:
     - assets/focus_map_logo.svg
     - assets/logo_github.svg
+    - assets/images/obrazek.svg
 
 flutter_launcher_icons:
   android: true

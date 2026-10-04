@@ -30,6 +30,7 @@ class AppColors {
   static const Color controlBorder = Color(0xFF625741);
   static const Color lightDivider = Color(0xFFF6F4EE);
   static const Color loading = Color(0xFF625741);
+  static const Color sheetHandle = Color(0xFFCCCCCC);
   static const Color mapMarker = Color(0xFF2F80ED);
   static const Color placeMarker = Color(0xFFFF8F57);
   static const Color shadow = Color(0x40000000);
@@ -39,6 +40,8 @@ class AppColors {
   static const Color white54 = Color(0xFFFCFBF8);
   static const Color white70 = Color(0xFFFCFBF8);
   static const Color greyText = Color(0xFF625741);
+  static const Color extraAmenityBackground = Color(0xFFFFDDAE);
+  static const Color extraAmenityText = Color(0xFFCC4400);
 }
 
 class AppTypography {

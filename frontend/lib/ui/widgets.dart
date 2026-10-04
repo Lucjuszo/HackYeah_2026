@@ -309,7 +309,7 @@ class BackChevron extends StatelessWidget {
     return IconButton(
       key: const ValueKey<String>('back'),
       tooltip: 'Wróć',
-      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.ink),
+      icon: const Icon(Icons.arrow_back_rounded, color: AppColors.ink),
       onPressed: () => Navigator.of(context).maybePop(),
     );
   }
@@ -505,10 +505,7 @@ class _TravelTimesLineState extends State<TravelTimesLine> {
                 ),
               ),
             if (widget.fromLabel case final label?)
-              Text(
-                'z: $label',
-                style: style.copyWith(color: AppColors.muted),
-              ),
+              Text('z: $label', style: style.copyWith(color: AppColors.muted)),
           ],
         );
       },

@@ -387,6 +387,7 @@ class Comment {
     required this.createdAt,
     this.userId,
     this.userName,
+    this.score,
     this.editedAt,
   });
 
@@ -395,6 +396,7 @@ class Comment {
     text: json['text'] as String,
     userId: json['user_id'] as String?,
     userName: json['user_name'] as String?,
+    score: json['score'] as int?,
     createdAt: _date(json['created_at'])!,
     editedAt: _date(json['edited_at']),
   );
@@ -403,13 +405,18 @@ class Comment {
   final String text;
   final String? userId;
   final String? userName;
+  final int? score;
   final DateTime createdAt;
   final DateTime? editedAt;
 }
 
 /// The logged-in user (GET /auth/me).
 class CurrentUser {
-  const CurrentUser({required this.id, required this.name, this.isAdmin = false});
+  const CurrentUser({
+    required this.id,
+    required this.name,
+    this.isAdmin = false,
+  });
 
   factory CurrentUser.fromJson(Json json) => CurrentUser(
     id: json['id'] as String,
@@ -517,6 +524,7 @@ class NewPlace {
     this.atmosphere,
     this.usagePrice,
     this.openingHours,
+    this.features = const <String>[],
   });
 
   final String name;
@@ -534,6 +542,7 @@ class NewPlace {
   /// e.g. '0-30', '60+', 'za darmo'.
   final String? usagePrice;
   final OpeningHours? openingHours;
+  final List<String> features;
 
   Json toJson() => {
     'name': name,
@@ -552,9 +561,11 @@ class NewPlace {
       'opening_hours': {
         'always_open': h.alwaysOpen,
         'periods': [
-          for (final p in h.periods) {'day': p.day, 'open': p.open, 'close': p.close},
+          for (final p in h.periods)
+            {'day': p.day, 'open': p.open, 'close': p.close},
         ],
       },
+    if (features.isNotEmpty) 'features': features,
   };
 }
 
@@ -566,10 +577,12 @@ class NewPlace {
 String? resolveUrl(Uri apiUrl, String? url) {
   if (url == null) return null;
   final resolved = apiUrl.resolve(url);
-  final isLoopback = resolved.host == 'localhost' ||
+  final isLoopback =
+      resolved.host == 'localhost' ||
       resolved.host == '127.0.0.1' ||
       resolved.host == '::1';
-  final apiIsLoopback = apiUrl.host == 'localhost' ||
+  final apiIsLoopback =
+      apiUrl.host == 'localhost' ||
       apiUrl.host == '127.0.0.1' ||
       apiUrl.host == '::1';
   if (isLoopback && !apiIsLoopback) {
