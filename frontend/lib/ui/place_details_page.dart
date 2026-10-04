@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/models.dart';
 import '../api/places_api.dart';
 import '../auth/auth.dart';
+import '../services/travel_time_service.dart';
 import 'format.dart' as fmt;
 import 'login_sheet.dart';
 import 'theme.dart';
@@ -15,6 +16,9 @@ class PlaceDetailsPage extends StatefulWidget {
     required this.auth,
     required this.summary,
     this.distanceM,
+    this.travelTimes,
+    this.origin,
+    this.originLabel,
     super.key,
   });
 
@@ -24,6 +28,13 @@ class PlaceDetailsPage extends StatefulWidget {
   /// Shown immediately while the full record loads.
   final PlaceSummary summary;
   final double? distanceM;
+
+  /// Route times from [origin] (device position or the chosen city); hidden without both.
+  final TravelTimeService? travelTimes;
+  final LatLon? origin;
+
+  /// Where [origin] is, shown when it isn't the device position.
+  final String? originLabel;
 
   @override
   State<PlaceDetailsPage> createState() => _PlaceDetailsPageState();
@@ -451,6 +462,17 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
             ),
           ],
         ),
+        if ((widget.travelTimes, widget.origin)
+            case (final service?, final origin?)) ...<Widget>[
+          const SizedBox(height: 6),
+          TravelTimesLine(
+            service: service,
+            from: origin,
+            to: summary.location,
+            fromLabel: widget.originLabel,
+            fontSize: 13,
+          ),
+        ],
         const SizedBox(height: 6),
         OpenStatusLine(place: summary, fontSize: 13),
         if (price != null || atmosphere != null) ...<Widget>[

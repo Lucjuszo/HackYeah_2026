@@ -48,6 +48,7 @@ Future<FakeBackend> pumpApp(
   FakeBackend? backend,
   LocationService? location,
   TestAuth? auth,
+  bool locateOnStart = false,
 }) async {
   tester.view.physicalSize = const Size(900, 1000);
   tester.view.devicePixelRatio = 1;
@@ -59,6 +60,7 @@ Future<FakeBackend> pumpApp(
       auth: (auth ?? TestAuth()).controller(backend),
       locationService: location ?? FakeLocationService(result: const LatLon(50.06, 19.94)),
       showMapTiles: false,
+      locateOnStart: locateOnStart,
     ),
   );
   await tester.pumpAndSettle();
@@ -181,6 +183,39 @@ void main() {
       await tester.tap(find.byKey(const ValueKey<String>('use-my-location')));
       await tester.pumpAndSettle();
       expect(find.text('Moja lokalizacja'), findsOneWidget);
+    });
+
+    displayTest('na starcie mapa pokazuje okolicę urządzenia', (tester) async {
+      await pumpApp(tester, locateOnStart: true);
+      expect(find.text('Moja lokalizacja'), findsOneWidget);
+      // Zoomed to Kraków: the place in Warsaw is off screen.
+      expect(find.text('1 miejsce na mapie'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
+    });
+
+    displayTest('bez zgody na GPS na starcie widać całą Polskę', (tester) async {
+      await pumpApp(
+        tester,
+        locateOnStart: true,
+        location: FakeLocationService(failure: const LocationFailure('Brak zgody na lokalizację.')),
+      );
+      expect(find.text('Lokalizacja'), findsOneWidget);
+      expect(find.text('2 miejsca na mapie'), findsOneWidget);
+    });
+
+    displayTest('promień szuka wokół mojej lokalizacji', (tester) async {
+      final backend = await pumpApp(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('radius-picker-trigger')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('5 km'));
+      await tester.pumpAndSettle();
+
+      final query = backend.requests.lastWhere((u) => u.path == '/places/summary').queryParameters;
+      expect(query['radius_m'], '5000');
+      expect(query['lat'], '50.06000');
+      expect(query['lon'], '19.94000');
+      expect(find.text('Moja lokalizacja'), findsOneWidget);
+      expect(find.text('1 miejsce w promieniu 5 km'), findsOneWidget);
     });
 
     displayTest('brak zgody na GPS pokazuje komunikat', (tester) async {

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:miejscowki_map/api/models.dart';
 import 'package:miejscowki_map/api/places_api.dart';
 import 'package:miejscowki_map/auth/auth.dart';
@@ -190,13 +191,17 @@ class FakeBackend {
       if (failPlaces) return _error(500, 'boom');
       // Like the real backend: only places inside the visible map area.
       final bbox = uri.queryParameters['bbox']?.split(',').map(double.parse).toList();
-      final visible = bbox == null
-          ? places
-          : places.where((p) {
-              final c = p['coordinates'] as Json;
-              final (lat, lon) = (c['lat'] as double, c['lon'] as double);
-              return lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3];
-            }).toList();
+      final near = uri.queryParameters['lat'] == null
+          ? null
+          : LatLng(double.parse(uri.queryParameters['lat']!), double.parse(uri.queryParameters['lon']!));
+      final radius = double.parse(uri.queryParameters['radius_m'] ?? '1000');
+      final visible = places.where((p) {
+        final c = p['coordinates'] as Json;
+        final (lat, lon) = (c['lat'] as double, c['lon'] as double);
+        if (near != null) return const Distance().as(LengthUnit.Meter, near, LatLng(lat, lon)) <= radius;
+        if (bbox == null) return true;
+        return lat >= bbox[0] && lat <= bbox[2] && lon >= bbox[1] && lon <= bbox[3];
+      }).toList();
       return _json(visible, headers: {'x-total-count': '${visible.length}'});
     }
     if (uri.path == '/geocode') return _json(geocodeResults);
