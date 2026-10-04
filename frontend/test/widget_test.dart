@@ -439,6 +439,20 @@ void main() {
       expect(find.text('Opinia numer 12', skipOffstage: false), findsOneWidget);
     });
 
+    displayTest('doczytanie po zmianie kolejności (łapki) nie dubluje opinii', (tester) async {
+      final backend = await openDetails(tester, backend: FakeBackend(comments: 13));
+      // Meanwhile someone's like took a comment off the first page ("Opinia numer 9" moves down).
+      final list = backend.commentsOf('p1');
+      list.insert(10, list.removeAt(9));
+
+      final more = find.byKey(const ValueKey<String>('more-comments'));
+      await tester.ensureVisible(more);
+      await tester.pumpAndSettle();
+      await tester.tap(more);
+      await tester.pumpAndSettle();
+      expect(find.text('Opinia numer 9', skipOffstage: false), findsOneWidget);
+    });
+
     displayTest('zdjęcie otwiera się na pełnym ekranie', (tester) async {
       await openDetails(tester);
       await tester.tap(find.byType(PageView).first);
@@ -730,7 +744,7 @@ void main() {
       await tester.ensureVisible(find.text('Kawiarnia'));
       await tester.tap(find.text('Kawiarnia'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Biblioteka'));
+      await tester.tap(find.text('Coworking'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Spokojnie'));
       await tester.tap(find.text('Spokojnie'));
@@ -755,7 +769,7 @@ void main() {
       expect(body['coordinates'], isNotNull);
       expect(body['amenities'], {'wifi': true, 'power_outlets': true});
       expect(body['atmosphere'], 'quiet');
-      expect(body['category'], 'library');
+      expect(body['category'], 'coworking');
       expect(body['usage_price'], '0-30');
       expect(body['opening_hours'], {
         'always_open': true,

@@ -294,7 +294,10 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
       );
       if (!mounted) return;
       setState(() {
-        _comments.addAll(page.items);
+        // The order follows likes, which can change between pages: a comment that moved down
+        // would come again, so don't show it twice.
+        final shown = {for (final c in _comments) c.id};
+        _comments.addAll(page.items.where((Comment c) => !shown.contains(c.id)));
         _commentsTotal = page.total;
         _commentsLoading = false;
       });

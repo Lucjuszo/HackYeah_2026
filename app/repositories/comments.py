@@ -23,6 +23,8 @@ class NotAllowed(Exception):
 async def ensure_indexes(db: AsyncDatabase) -> None:
     await db[COLLECTION].create_index([("place_id", 1), ("created_at", -1)])
     await db[COLLECTION].create_index([("place_id", 1), ("likes", -1), ("created_at", -1)])
+    # Mongo sorts a missing field below 0: comments from before likes existed get an explicit 0.
+    await db[COLLECTION].update_many({"likes": {"$exists": False}}, {"$set": {"likes": 0, "liked_by": []}})
 
 
 def _from_document(doc: dict[str, Any]) -> Comment:
@@ -77,6 +79,8 @@ async def create_comment(
         "score": score,
         "is_mock": is_mock,
         "created_at": utcnow(),
+        "likes": 0,  # stored, not missing: a missing field would sort below a liked-then-unliked 0
+        "liked_by": [],
     }
     result = await db[COLLECTION].insert_one(doc)
     doc["_id"] = result.inserted_id
@@ -88,8 +92,7 @@ async def count_comments(db: AsyncDatabase, place_id: ObjectId) -> int:
 
 
 async def list_comments(db: AsyncDatabase, place_id: ObjectId, *, limit: int, skip: int) -> list[Comment]:
-    # Most liked first (older comments without the field count as 0), then newest;
-    # _id breaks ties between comments created in the same millisecond.
+    # Most liked first, then newest; _id breaks ties between comments created in the same millisecond.
     order = [("likes", -1), ("created_at", -1), ("_id", -1)]
     cursor = db[COLLECTION].find({"place_id": place_id}).sort(order).skip(skip).limit(limit)
     return await _with_user_scores(db, place_id, [_from_document(doc) async for doc in cursor])

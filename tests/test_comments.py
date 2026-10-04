@@ -1,5 +1,11 @@
+import asyncio
+
 import pytest
 from bson import ObjectId
+
+from app.config import settings
+from app.db import create_client
+from app.repositories import comments as repo
 
 from tests.helpers import ANONYMOUS, DEFAULT_USER, as_admin, as_user
 
@@ -207,6 +213,36 @@ class TestLikes:
         # Same number of likes: newest first.
         assert [c["text"] for c in comments(client, place_id)] == ["b", "a", "d", "c"]
         assert [c["text"] for c in comments(client, place_id, limit=2, skip=1)] == ["a", "d"]
+
+    def test_unliked_comment_ties_with_never_liked(self, client, created_place):
+        place_id = created_place["id"]
+        old = comment(client, place_id, text="stary").json()
+        self.like(client, place_id, old["id"], as_user("bartek"))
+        self.like(client, place_id, old["id"], as_user("bartek"), method="DELETE")
+        comment(client, place_id, text="nowy")
+        # Both have 0 likes: the newer one comes first.
+        assert [c["text"] for c in comments(client, place_id)] == ["nowy", "stary"]
+
+    def test_comments_from_before_likes_get_zero(self, client, db, created_place):
+        place_id = created_place["id"]
+        old = comment(client, place_id, text="sprzed łapek").json()
+        db[repo.COLLECTION].update_one({"_id": ObjectId(old["id"])}, {"$unset": {"likes": "", "liked_by": ""}})
+
+        async def migrate():  # what the app does at start (lifespan -> ensure_indexes)
+            mongo = create_client()
+            try:
+                await repo.ensure_indexes(mongo[settings.mongo_db])
+            finally:
+                await mongo.close()
+
+        asyncio.run(migrate())
+        assert db[repo.COLLECTION].find_one({"_id": ObjectId(old["id"])})["likes"] == 0
+        liked = comment(client, place_id, text="polubiony").json()
+        self.like(client, place_id, liked["id"], as_user("bartek"))
+        self.like(client, place_id, liked["id"], as_user("bartek"), method="DELETE")
+        newest = comment(client, place_id, text="najnowszy").json()
+        assert [c["text"] for c in comments(client, place_id)] == ["najnowszy", "polubiony", "sprzed łapek"]
+        assert newest["likes"] == 0
 
     def test_anonymous_cannot_like(self, client, created_place):
         c = comment(client, created_place["id"]).json()

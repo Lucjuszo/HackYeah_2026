@@ -104,6 +104,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
   static const List<String> _categories = <String>[
     'Kawiarnia',
     'Biblioteka',
+    'Coworking',
     'Restauracja',
     'Park',
     'Inne',
@@ -113,6 +114,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
   static const Map<String, String> _categoryApiValues = <String, String>{
     'Kawiarnia': 'cafe',
     'Biblioteka': 'library',
+    'Coworking': 'coworking',
     'Restauracja': 'restaurant',
     'Park': 'park',
     'Inne': 'other',
