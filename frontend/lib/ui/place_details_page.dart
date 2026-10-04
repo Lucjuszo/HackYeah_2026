@@ -51,13 +51,14 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   bool _commentsLoading = true;
   String? _commentsError;
 
-  // Logged-in user's part: their rating, writing / editing / deleting opinions.
+  // Logged-in user's part: their rating, writing / editing / deleting / liking opinions.
   CurrentUser? _me;
   int? _myScore;
   RatingSummary? _rating; // newer than the loaded place after the user rates
   bool _ratingBusy = false;
   final _commentController = TextEditingController();
   bool _posting = false;
+  final Set<String> _liking = <String>{}; // comment ids with a like request in flight
   int _uploading = 0; // photos still being sent
 
   /// Same limit as the API (MAX_PHOTOS_PER_PLACE).
@@ -213,6 +214,30 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
     });
   }
 
+  /// Thumbs up, or takes it back when already given. The list keeps its order until reloaded
+  /// (no comment jumps away from under the finger); the API sorts the most liked first.
+  Future<void> _toggleLike(Comment comment) async {
+    if (_liking.contains(comment.id)) return;
+    await _withLogin(
+      (String token) => _busy((bool v) {
+        v ? _liking.add(comment.id) : _liking.remove(comment.id);
+      }, () async {
+        final updated = await widget.api.likeComment(
+          _placeId,
+          comment.id,
+          liked: !comment.isLikedBy(_me?.id),
+          token: token,
+        );
+        if (!mounted) return;
+        setState(() {
+          final i = _comments.indexWhere((Comment c) => c.id == comment.id);
+          if (i >= 0) _comments[i] = updated;
+        });
+      }),
+      reason: 'Zaloguj się, żeby polubić opinię.',
+    );
+  }
+
   Future<void> _deleteComment(Comment comment) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -269,7 +294,10 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
       );
       if (!mounted) return;
       setState(() {
-        _comments.addAll(page.items);
+        // The order follows likes, which can change between pages: a comment that moved down
+        // would come again, so don't show it twice.
+        final shown = {for (final c in _comments) c.id};
+        _comments.addAll(page.items.where((Comment c) => !shown.contains(c.id)));
         _commentsTotal = page.total;
         _commentsLoading = false;
       });
@@ -642,6 +670,8 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
           for (final comment in _comments)
             _CommentTile(
               comment: comment,
+              liked: comment.isLikedBy(_me?.id),
+              onLike: () => _toggleLike(comment),
               onEdit: _me?.canModify(comment) ?? false
                   ? () => _editComment(comment)
                   : null,
@@ -1239,9 +1269,19 @@ class _RatingSummaryCard extends StatelessWidget {
 }
 
 class _CommentTile extends StatelessWidget {
-  const _CommentTile({required this.comment, this.onEdit, this.onDelete});
+  const _CommentTile({
+    required this.comment,
+    required this.liked,
+    required this.onLike,
+    this.onEdit,
+    this.onDelete,
+  });
 
   final Comment comment;
+
+  /// Whether the logged-in user gave this comment a thumbs up.
+  final bool liked;
+  final VoidCallback onLike;
 
   /// Set for the author's own comments (and for admins).
   final VoidCallback? onEdit;
@@ -1301,6 +1341,36 @@ class _CommentTile extends StatelessWidget {
                 Text(
                   comment.text,
                   style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+                const SizedBox(height: 4),
+                InkWell(
+                  key: ValueKey<String>('comment-like-${comment.id}'),
+                  onTap: onLike,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          liked ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined,
+                          size: 16,
+                          color: liked ? AppColors.primary : AppColors.muted,
+                        ),
+                        if (comment.likes > 0) ...<Widget>[
+                          const SizedBox(width: 4),
+                          Text(
+                            '${comment.likes}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: liked ? AppColors.primary : AppColors.muted,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

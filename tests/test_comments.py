@@ -1,5 +1,11 @@
+import asyncio
+
 import pytest
 from bson import ObjectId
+
+from app.config import settings
+from app.db import create_client
+from app.repositories import comments as repo
 
 from tests.helpers import ANONYMOUS, DEFAULT_USER, as_admin, as_user
 
@@ -164,3 +170,91 @@ class TestEdit:
         other = client.post("/places", json=minimal_payload).json()
         c = comment(client, created_place["id"], user="anna").json()
         assert self.edit(client, other["id"], c["id"], "x", as_user("anna")).status_code == 404
+
+
+class TestLikes:
+    def like(self, client, place_id, comment_id, headers, method="PUT"):
+        return client.request(method, f"/places/{place_id}/comments/{comment_id}/like", headers=headers)
+
+    def test_new_comment_has_no_likes(self, client, created_place):
+        body = comment(client, created_place["id"]).json()
+        assert (body["likes"], body["liked_by"]) == (0, [])
+
+    def test_like_and_unlike(self, client, created_place):
+        c = comment(client, created_place["id"], user="anna").json()
+        response = self.like(client, created_place["id"], c["id"], as_user("bartek"))
+        assert response.status_code == 200, response.text
+        assert (response.json()["likes"], response.json()["liked_by"]) == (1, ["bartek"])
+
+        response = self.like(client, created_place["id"], c["id"], as_user("bartek"), method="DELETE")
+        assert response.status_code == 200, response.text
+        assert (response.json()["likes"], response.json()["liked_by"]) == (0, [])
+
+    def test_one_like_per_user(self, client, created_place):
+        c = comment(client, created_place["id"]).json()
+        for _ in range(2):
+            body = self.like(client, created_place["id"], c["id"], as_user("bartek")).json()
+        assert body["likes"] == 1
+        body = self.like(client, created_place["id"], c["id"], as_user("celina")).json()
+        assert (body["likes"], body["liked_by"]) == (2, ["bartek", "celina"])
+
+    def test_unlike_without_like_changes_nothing(self, client, created_place):
+        c = comment(client, created_place["id"]).json()
+        self.like(client, created_place["id"], c["id"], as_user("bartek"))
+        body = self.like(client, created_place["id"], c["id"], as_user("celina"), method="DELETE").json()
+        assert (body["likes"], body["liked_by"]) == (1, ["bartek"])
+
+    def test_most_liked_first(self, client, created_place):
+        place_id = created_place["id"]
+        ids = {text: comment(client, place_id, text=text).json()["id"] for text in ("a", "b", "c", "d")}
+        for user in ("u1", "u2"):
+            self.like(client, place_id, ids["b"], as_user(user))
+        self.like(client, place_id, ids["a"], as_user("u1"))
+        # Same number of likes: newest first.
+        assert [c["text"] for c in comments(client, place_id)] == ["b", "a", "d", "c"]
+        assert [c["text"] for c in comments(client, place_id, limit=2, skip=1)] == ["a", "d"]
+
+    def test_unliked_comment_ties_with_never_liked(self, client, created_place):
+        place_id = created_place["id"]
+        old = comment(client, place_id, text="stary").json()
+        self.like(client, place_id, old["id"], as_user("bartek"))
+        self.like(client, place_id, old["id"], as_user("bartek"), method="DELETE")
+        comment(client, place_id, text="nowy")
+        # Both have 0 likes: the newer one comes first.
+        assert [c["text"] for c in comments(client, place_id)] == ["nowy", "stary"]
+
+    def test_comments_from_before_likes_get_zero(self, client, db, created_place):
+        place_id = created_place["id"]
+        old = comment(client, place_id, text="sprzed łapek").json()
+        db[repo.COLLECTION].update_one({"_id": ObjectId(old["id"])}, {"$unset": {"likes": "", "liked_by": ""}})
+
+        async def migrate():  # what the app does at start (lifespan -> ensure_indexes)
+            mongo = create_client()
+            try:
+                await repo.ensure_indexes(mongo[settings.mongo_db])
+            finally:
+                await mongo.close()
+
+        asyncio.run(migrate())
+        assert db[repo.COLLECTION].find_one({"_id": ObjectId(old["id"])})["likes"] == 0
+        liked = comment(client, place_id, text="polubiony").json()
+        self.like(client, place_id, liked["id"], as_user("bartek"))
+        self.like(client, place_id, liked["id"], as_user("bartek"), method="DELETE")
+        newest = comment(client, place_id, text="najnowszy").json()
+        assert [c["text"] for c in comments(client, place_id)] == ["najnowszy", "polubiony", "sprzed łapek"]
+        assert newest["likes"] == 0
+
+    def test_anonymous_cannot_like(self, client, created_place):
+        c = comment(client, created_place["id"]).json()
+        assert self.like(client, created_place["id"], c["id"], ANONYMOUS).status_code == 401
+        assert self.like(client, created_place["id"], c["id"], ANONYMOUS, method="DELETE").status_code == 401
+
+    @pytest.mark.parametrize("comment_id", [str(ObjectId()), "not-an-id"])
+    def test_not_found(self, client, created_place, comment_id):
+        assert self.like(client, created_place["id"], comment_id, as_user("anna")).status_code == 404
+        assert self.like(client, created_place["id"], comment_id, as_user("anna"), method="DELETE").status_code == 404
+
+    def test_comment_of_other_place(self, client, created_place, minimal_payload):
+        other = client.post("/places", json=minimal_payload).json()
+        c = comment(client, created_place["id"]).json()
+        assert self.like(client, other["id"], c["id"], as_user("anna")).status_code == 404

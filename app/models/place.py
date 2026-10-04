@@ -61,6 +61,15 @@ class Atmosphere(StrEnum):
     LIVELY = "lively"  # gwarno
 
 
+class PlaceCategory(StrEnum):
+    CAFE = "cafe"  # kawiarnia
+    LIBRARY = "library"  # biblioteka
+    COWORKING = "coworking"
+    RESTAURANT = "restaurant"  # restauracja
+    PARK = "park"
+    OTHER = "other"  # inne
+
+
 def _dedupe_case_insensitive(items: list[str]) -> list[str]:
     seen: set[str] = set()
     result = []
@@ -125,6 +134,7 @@ class PlaceCreate(BaseModel):
         description="PLN per visit. 'A-B', 'A+' or 'za darmo' also fill `price_range` (used by price filters)",
     )
     atmosphere: Atmosphere | None = None
+    category: PlaceCategory | None = None
     features: Features = Field([], description="User-defined extras shown on the place card, e.g. 'Pokoje wygłuszane'")
     menu: list[MenuItem] = []
     osm: OsmRef | None = None
@@ -134,7 +144,7 @@ class PlaceUpdate(BaseModel):
     """Partial update (PATCH).
 
     - omitted field  -> unchanged
-    - explicit null  -> cleared (only for nullable fields: opening_hours, usage_price, atmosphere, osm)
+    - explicit null  -> cleared (only for nullable fields: opening_hours, usage_price, atmosphere, category, osm)
     - amenities      -> merged flag by flag, so {"amenities": {"wifi": true}} leaves other flags alone
     - other objects and lists (address, opening_hours, features, menu) are replaced as a whole
     """
@@ -146,6 +156,7 @@ class PlaceUpdate(BaseModel):
     opening_hours: OpeningHours | None = None
     usage_price: NonEmptyStr | None = None
     atmosphere: Atmosphere | None = None
+    category: PlaceCategory | None = None
     features: Features | None = None
     menu: list[MenuItem] | None = None
     osm: OsmRef | None = None
@@ -226,6 +237,7 @@ class PlaceSummary(BaseModel):
     usage_price: str | None = None
     price_range: PriceRange | None = None
     atmosphere: Atmosphere | None = None
+    category: PlaceCategory | None = None
     rating: RatingSummary
     thumbnail_url: str | None = Field(None, description="Thumbnail of the first photo")
     photo_count: int = 0

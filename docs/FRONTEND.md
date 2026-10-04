@@ -49,14 +49,18 @@ Konfiguracja klienta Google (Cloud Console, redirect URI `http://localhost:8000/
 
 ## Dodawanie miejsca, ocen i opinii
 
-- **Miejsce** (przycisk + na liście → formularz): nazwa, pinezka na mapie (adres z `GET /geocode/reverse`,
-  `404` = brak adresu), wyszukiwanie adresu (`GET /geocode`), udogodnienia, atmosfera, cena (`usage_price`:
-  `za darmo`, `0-30`, `30-60`, `60+`) i godziny otwarcia (nie wiem / całą dobę / Pon–Pt + Sob–Nd; zamknięcie po
-  północy dzielone na 24:00). Potem `POST /places` i od razu szczegóły nowego miejsca.
-- **Ocena** (szczegóły → „Oceń to miejsce”): `GET/PUT/DELETE /places/{id}/ratings/me`; PUT zwraca nowe
+- **Miejsce** (przycisk + na liście → formularz „Dodaj miejsce”): nazwa, pinezka na mapie (adres z
+  `GET /geocode/reverse`, `404` = brak adresu), wyszukiwanie adresu (`GET /geocode`), kategoria (`category`:
+  `cafe`, `library`, `coworking`, `restaurant`, `park`, `other`; filtr `?category=` w wyszukiwaniu), udogodnienia,
+  atmosfera, cena (`usage_price`: `za darmo`, `0-30`, `30-60`, `60+`) i godziny otwarcia (nie wiem / całą dobę /
+  własne). Potem `POST /places` i od razu szczegóły nowego miejsca.
+- **Ocena** (szczegóły → karta „Twoja opinia”, gwiazdki): `GET/PUT/DELETE /places/{id}/ratings/me`; PUT zwraca nowe
   podsumowanie (`summary`), które front od razu pokazuje.
-- **Opinie**: `POST /places/{id}/comments` (pole „Napisz opinię…”), `PATCH` / `DELETE .../comments/{id}` z menu
-  ⋮ przy własnych opiniach (admin: przy wszystkich).
+- **Opinie**: `POST /places/{id}/comments` (komentarz w tej samej karcie, wymaga gwiazdek; wysyła też `score`),
+  `PATCH` / `DELETE .../comments/{id}` z menu ⋮ przy własnych opiniach (admin: przy wszystkich). Każda opinia ma
+  `user_score` – aktualną ocenę miejsca wystawioną przez autora (zmienia się razem z oceną).
+- **Łapki w górę**: `PUT` / `DELETE /places/{id}/comments/{id}/like` (jedna na użytkownika, bez łapek w dół).
+  `GET .../comments` zwraca najpierw opinie z największą liczbą łapek (`likes`, `liked_by`), potem najnowsze.
 
 ## Miejsca
 

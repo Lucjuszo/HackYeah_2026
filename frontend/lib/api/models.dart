@@ -392,6 +392,7 @@ class Comment {
     this.userName,
     this.score,
     this.editedAt,
+    this.likedBy = const <String>[],
   });
 
   factory Comment.fromJson(Json json) => Comment(
@@ -402,6 +403,7 @@ class Comment {
     score: json['score'] as int?,
     createdAt: _date(json['created_at'])!,
     editedAt: _date(json['edited_at']),
+    likedBy: [for (final id in (json['liked_by'] as List? ?? const [])) id as String],
   );
 
   final String id;
@@ -411,6 +413,13 @@ class Comment {
   final int? score;
   final DateTime createdAt;
   final DateTime? editedAt;
+
+  /// Users who gave a thumbs up (the API lists the most liked comments first).
+  final List<String> likedBy;
+
+  int get likes => likedBy.length;
+
+  bool isLikedBy(String? userId) => userId != null && likedBy.contains(userId);
 }
 
 /// The logged-in user (GET /auth/me).
@@ -528,6 +537,7 @@ class NewPlace {
     this.postcode,
     this.amenities = const <String, bool>{},
     this.atmosphere,
+    this.category,
     this.usagePrice,
     this.openingHours,
     this.features = const <String>[],
@@ -544,6 +554,9 @@ class NewPlace {
   /// API flag name (e.g. 'wifi', 'power_outlets') -> available. Missing = unknown.
   final Map<String, bool> amenities;
   final Atmosphere? atmosphere;
+
+  /// API value: 'cafe', 'library', 'coworking', 'restaurant', 'park' or 'other'.
+  final String? category;
 
   /// e.g. '0-30', '60+', 'za darmo'.
   final String? usagePrice;
@@ -562,6 +575,7 @@ class NewPlace {
     'coordinates': {'lat': location.lat, 'lon': location.lon},
     if (amenities.isNotEmpty) 'amenities': amenities,
     if (atmosphere case final a?) 'atmosphere': a.apiValue,
+    'category': ?category,
     'usage_price': ?usagePrice,
     if (openingHours case final h?)
       'opening_hours': {

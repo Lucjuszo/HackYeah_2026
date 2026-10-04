@@ -120,6 +120,7 @@ class TestCloudinaryStorage:
 
 class TestPhotosApiWithCloudinary:
     def test_upload_serve_and_delete(self, client, created_place, cloudinary_storage, uploads):
+        created_place = created_place["id"]  # the fixture returns the whole place
         resp = client.post(
             f"/places/{created_place}/photos", files={"file": ("p.jpg", make_image(), "image/jpeg")}
         )

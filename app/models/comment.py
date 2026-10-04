@@ -22,7 +22,12 @@ class Comment(BaseModel):
     user_name: str | None = Field(None, description="Author's display name at the time of writing")
     text: str
     score: int | None = Field(None, ge=1, le=5, description="Rating attached to the opinion, when provided")
+    user_score: int | None = Field(
+        None, ge=1, le=5, description="The author's current rating of the place (follows later changes)"
+    )
     is_mock: bool = Field(False, description="Demo/test data loaded by a script")
     created_at: datetime
     edited_at: datetime | None = None
     edited_by: str | None = Field(None, description="Set when edited; differs from user_id when an admin edited it")
+    likes: int = Field(0, description="Number of thumbs up; lists show the most liked first")
+    liked_by: list[str] = Field(default_factory=list, description="Ids of the users who gave a thumbs up")

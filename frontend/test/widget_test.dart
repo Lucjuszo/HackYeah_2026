@@ -117,7 +117,8 @@ void main() {
   group('lista i mapa', () {
     displayTest('miejsca z backendu są na liście i na mapie', (tester) async {
       final backend = await pumpApp(tester);
-      expect(backend.searches, isNotEmpty);
+      await tester.pump(const Duration(seconds: 1));
+      expect(backend.searches, hasLength(1)); // one search at start, not one per startup event
 
       expect(find.text('2 miejsca na mapie'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
@@ -130,6 +131,40 @@ void main() {
       expect(text('Floriańska 15, Kraków'), findsWidgets);
       expect(text('Otwarte teraz'), findsWidgets);
       expect(text('Zamknięte'), findsWidgets);
+    });
+
+    displayTest('mapa wczytuje miejsca od razu, choć rozmiar ekranu był znany dopiero po starcie', (tester) async {
+      // Phones and browsers often report a zero-sized screen for the first frame(s).
+      tester.view.physicalSize = Size.zero;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final backend = FakeBackend();
+      await tester.pumpWidget(
+        MiejscowkiApp(
+          api: backend.api(),
+          auth: TestAuth().controller(backend),
+          locationService: FakeLocationService(result: const LatLon(50.06, 19.94)),
+          showMapTiles: false,
+          locateOnStart: false,
+        ),
+      );
+      await tester.pump();
+
+      expect(backend.searches, isEmpty); // nothing to search yet
+
+      tester.view.physicalSize = const Size(900, 1000);
+      await tester.pump(); // the frame that learns the size
+      await tester.pump(const Duration(seconds: 1)); // no gesture, no tap: just waiting
+      await tester.pumpAndSettle();
+
+      expect(backend.searches, hasLength(1));
+      expect(find.text('2 miejsca na mapie'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('marker-p2')), findsOneWidget);
+      // The search covers the whole of Poland, not a degenerate zero-sized area.
+      final bbox = backend.lastSearch.queryParameters['bbox']!.split(',').map(double.parse).toList();
+      expect(bbox[2] - bbox[0], greaterThan(5));
+      expect(bbox[3] - bbox[1], greaterThan(5));
     });
 
     displayTest('pusta lista', (tester) async {
@@ -404,6 +439,20 @@ void main() {
       expect(find.text('Opinia numer 12', skipOffstage: false), findsOneWidget);
     });
 
+    displayTest('doczytanie po zmianie kolejności (łapki) nie dubluje opinii', (tester) async {
+      final backend = await openDetails(tester, backend: FakeBackend(comments: 13));
+      // Meanwhile someone's like took a comment off the first page ("Opinia numer 9" moves down).
+      final list = backend.commentsOf('p1');
+      list.insert(10, list.removeAt(9));
+
+      final more = find.byKey(const ValueKey<String>('more-comments'));
+      await tester.ensureVisible(more);
+      await tester.pumpAndSettle();
+      await tester.tap(more);
+      await tester.pumpAndSettle();
+      expect(find.text('Opinia numer 9', skipOffstage: false), findsOneWidget);
+    });
+
     displayTest('zdjęcie otwiera się na pełnym ekranie', (tester) async {
       await openDetails(tester);
       await tester.tap(find.byType(PageView).first);
@@ -479,11 +528,12 @@ void main() {
     displayTest('gwiazdki zapisują ocenę i odświeżają średnią', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openPlace(tester);
-      expect(find.text('Oceń to miejsce'), findsOneWidget);
+      expect(find.text('Twoja opinia'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('remove-rating')), findsNothing);
 
       await tapKey(tester, 'rate-5');
       expect(backend.myRatings['p1'], 5);
-      expect(find.text('Twoja ocena'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('remove-rating')), findsOneWidget);
       expect(
         find.text('13 ocen'),
         findsOneWidget,
@@ -492,26 +542,27 @@ void main() {
 
       await tapKey(tester, 'remove-rating');
       expect(backend.myRatings, isEmpty);
-      expect(find.text('Oceń to miejsce'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('remove-rating')), findsNothing);
     });
 
     displayTest('wcześniejsza ocena jest widoczna po wejściu', (tester) async {
       final backend = FakeBackend()..myRatings['p1'] = 3;
       await pumpApp(tester, backend: backend, auth: TestAuth(loggedIn: true));
       await openPlace(tester);
-      expect(find.text('Twoja ocena'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('remove-rating')),
         findsOneWidget,
       );
+      final third = tester.widget<Icon>(
+        find.descendant(of: find.byKey(const ValueKey<String>('rate-3')), matching: find.byType(Icon)),
+      );
+      expect(third.icon, Icons.star_rounded);
     });
 
     displayTest('dodanie opinii pokazuje ją na górze listy', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openPlace(tester);
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('comment-input')),
-      );
+      await tapKey(tester, 'rate-5'); // an opinion needs stars
       await tester.enterText(
         find.byKey(const ValueKey<String>('comment-input')),
         'Świetna kawa i cisza',
@@ -521,6 +572,16 @@ void main() {
       expect(backend.commentsOf('p1').first['text'], 'Świetna kawa i cisza');
       expect(find.text('Świetna kawa i cisza'), findsOneWidget);
       expect(find.text('Opinie (4)'), findsOneWidget);
+    });
+
+    displayTest('opinia bez gwiazdek nic nie wysyła', (tester) async {
+      final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
+      await openPlace(tester);
+      await tester.ensureVisible(find.byKey(const ValueKey<String>('comment-input')));
+      await tester.enterText(find.byKey(const ValueKey<String>('comment-input')), 'Bez oceny');
+      await tapKey(tester, 'comment-send');
+      expect(backend.commentsOf('p1'), hasLength(3));
+      expect(find.text('Wybierz ocenę gwiazdkami, aby dodać komentarz.'), findsOneWidget);
     });
 
     displayTest('pusta opinia nic nie wysyła', (tester) async {
@@ -540,9 +601,7 @@ void main() {
         findsNothing,
       ); // someone else's
 
-      await tester.ensureVisible(
-        find.byKey(const ValueKey<String>('comment-input')),
-      );
+      await tapKey(tester, 'rate-4');
       await tester.enterText(
         find.byKey(const ValueKey<String>('comment-input')),
         'Pierwsza wersja',
@@ -571,6 +630,18 @@ void main() {
       expect(backend.commentsOf('p1'), hasLength(3));
     });
 
+    displayTest('łapka w górę dodaje i cofa polubienie', (tester) async {
+      final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
+      await openPlace(tester);
+      await tapKey(tester, 'comment-like-c1');
+      expect(backend.commentsOf('p1')[1]['liked_by'], hasLength(1));
+      expect(find.text('1'), findsOneWidget);
+
+      await tapKey(tester, 'comment-like-c1');
+      expect(backend.commentsOf('p1')[1]['liked_by'], isEmpty);
+      expect(find.text('1'), findsNothing);
+    });
+
     displayTest(
       'niezalogowany: opinia czeka na logowanie i zapisuje się po nim',
       (tester) async {
@@ -584,9 +655,11 @@ void main() {
           find.byKey(const ValueKey<String>('comment-input')),
           'Po zalogowaniu',
         );
-        await tapKey(tester, 'comment-send');
+        await tapKey(tester, 'rate-4'); // stars first: they ask to log in
         await tester.tap(find.byKey(const ValueKey<String>('login-github')));
         await tester.pumpAndSettle();
+        expect(backend.myRatings['p1'], 4);
+        await tapKey(tester, 'comment-send'); // the typed text is still there
         expect(backend.commentsOf('p1').first['text'], 'Po zalogowaniu');
         expect(find.text('Po zalogowaniu'), findsOneWidget);
       },
@@ -611,7 +684,17 @@ void main() {
     Future<void> openForm(WidgetTester tester) async {
       await tester.tap(find.byIcon(Icons.add_rounded));
       await tester.pumpAndSettle(const Duration(seconds: 1));
-      expect(find.text('Dodaj miejscówkę'), findsOneWidget);
+      expect(find.widgetWithText(AppBar, 'Dodaj miejsce'), findsOneWidget);
+    }
+
+    /// Opening hours are picked in a sheet: 'hours-always' or 'hours-custom'.
+    Future<void> chooseHours(WidgetTester tester, String key) async {
+      await tester.ensureVisible(find.byKey(const ValueKey<String>('hours-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('hours-selector')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey<String>(key)));
+      await tester.pumpAndSettle();
     }
 
     Future<void> submit(WidgetTester tester) async {
@@ -658,9 +741,16 @@ void main() {
       );
       await tapKey(tester, 'amenity-wifi');
       await tapKey(tester, 'amenity-power_outlets');
+      await tester.ensureVisible(find.text('Kawiarnia'));
+      await tester.tap(find.text('Kawiarnia'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Coworking'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Spokojnie'));
       await tester.tap(find.text('Spokojnie'));
-      await tester.tap(find.text('Do 30 zł'));
-      await tapKey(tester, 'hours-always');
+      await tester.tap(find.text('0–30 zł'));
+      await chooseHours(tester, 'hours-always');
+      expect(find.text('Całą dobę'), findsOneWidget);
       await submit(tester);
 
       // Not logged in yet: choose a provider.
@@ -679,6 +769,7 @@ void main() {
       expect(body['coordinates'], isNotNull);
       expect(body['amenities'], {'wifi': true, 'power_outlets': true});
       expect(body['atmosphere'], 'quiet');
+      expect(body['category'], 'coworking');
       expect(body['usage_price'], '0-30');
       expect(body['opening_hours'], {
         'always_open': true,
@@ -716,23 +807,36 @@ void main() {
       expect(find.text('Dodano: Ze Zdjęciem'), findsOneWidget);
     });
 
-    displayTest('własne godziny: Pon–Pt i Sob–Nd', (tester) async {
+    displayTest('własne godziny: te same codziennie', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openForm(tester);
       await tester.enterText(
         find.byKey(const ValueKey<String>('new-place-name')),
         'Biblioteka',
       );
-      await tapKey(tester, 'hours-custom');
-      expect(find.text('Pon–Pt'), findsOneWidget);
-      expect(find.text('8:00'), findsOneWidget);
+      await chooseHours(tester, 'hours-custom');
+      expect(find.text('8:00–20:00'), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey<String>('hours-open')), '09:30');
+      await tester.enterText(find.byKey(const ValueKey<String>('hours-close')), '17:00');
+      await tester.pumpAndSettle();
+      expect(find.text('9:30–17:00'), findsOneWidget);
       await submit(tester);
 
+      // What the form shows is what is sent: the same hours every day, weekend too.
       final hours = backend.created.single['opening_hours'] as Map;
       final periods = (hours['periods'] as List).cast<Map>();
-      expect(periods, hasLength(7));
-      expect(periods.first, {'day': 0, 'open': '08:00', 'close': '20:00'});
-      expect(periods.last, {'day': 6, 'open': '10:00', 'close': '18:00'});
+      expect(periods, [
+        for (var day = 0; day < 7; day++) {'day': day, 'open': '09:30', 'close': '17:00'},
+      ]);
+    });
+
+    displayTest('nieznane godziny nie pokazują wymyślonych godzin', (tester) async {
+      final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
+      await openForm(tester);
+      expect(find.text('Nie znane'), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey<String>('new-place-name')), 'Czytelnia');
+      await submit(tester);
+      expect(backend.created.single.containsKey('opening_hours'), isFalse);
     });
 
     displayTest('bez nazwy nie wysyła', (tester) async {

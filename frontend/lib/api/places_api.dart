@@ -163,15 +163,18 @@ class PlacesApi {
   }
 
   static String _errorMessage(http.Response response) {
-    if (response.statusCode == 401)
+    if (response.statusCode == 401) {
       return 'Sesja wygasła. Zaloguj się ponownie.';
-    if (response.statusCode == 429)
+    }
+    if (response.statusCode == 429) {
       return 'Za dużo zmian w krótkim czasie. Spróbuj za chwilę.';
+    }
     if (response.statusCode == 403) return 'Nie masz uprawnień do tej zmiany.';
     if (response.statusCode == 404) return 'Nie znaleziono.';
     if (response.statusCode == 413) return 'Zdjęcie jest za duże (max 10 MB).';
-    if (response.statusCode == 415)
+    if (response.statusCode == 415) {
       return 'Ten plik nie jest obsługiwanym zdjęciem.';
+    }
     if (response.statusCode >= 500) {
       return 'Serwer ma chwilowy problem. Spróbuj za moment.';
     }
@@ -296,7 +299,7 @@ class PlacesApi {
       'POST',
       '${_placePath(placeId)}/comments',
       token: token,
-      body: <String, Object?>{'text': text, if (score != null) 'score': score},
+      body: <String, Object?>{'text': text, 'score': ?score},
     );
     return Comment.fromJson(body! as Json);
   }
@@ -312,6 +315,21 @@ class PlacesApi {
       '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}',
       token: token,
       body: {'text': text},
+    );
+    return Comment.fromJson(body! as Json);
+  }
+
+  /// Gives ([liked]) or takes back the user's thumbs up; returns the updated comment.
+  Future<Comment> likeComment(
+    String placeId,
+    String commentId, {
+    required bool liked,
+    required String token,
+  }) async {
+    final body = await _send(
+      liked ? 'PUT' : 'DELETE',
+      '${_placePath(placeId)}/comments/${Uri.encodeComponent(commentId)}/like',
+      token: token,
     );
     return Comment.fromJson(body! as Json);
   }
