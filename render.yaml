@@ -23,7 +23,7 @@ services:
       - key: MONGO_DB
         value: hackyeah
       - key: CORS_ORIGINS
-        value: https://focusmap-12d9.onrender.com
+        value: https://focusmap-6spc.onrender.com
       - key: CORS_ALLOW_LOCALHOST
         value: "false"
       - key: PUBLIC_BASE_URL
