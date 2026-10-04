@@ -281,7 +281,7 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
             pinned: true,
             expandedHeight: 260,
             backgroundColor: AppColors.background,
-            surfaceTintColor: Colors.transparent,
+            surfaceTintColor: AppColors.transparent,
             leading: Padding(
               padding: const EdgeInsets.all(8),
               child: CircleAvatar(
@@ -615,12 +615,12 @@ class _PhotoHeaderState extends State<_PhotoHeader> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0x99000000),
+                color: AppColors.imageOverlay,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 '${_page + 1}/${widget.photos.length}',
-                style: const TextStyle(color: Colors.white, fontSize: 12),
+                style: const TextStyle(color: AppColors.white, fontSize: 12),
               ),
             ),
           ),
@@ -688,10 +688,10 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
   Widget build(BuildContext context) {
     final photo = widget.photos[_page];
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        backgroundColor: AppColors.black,
+        foregroundColor: AppColors.white,
         title: Text(
           '${_page + 1} z ${widget.photos.length}',
           style: const TextStyle(fontSize: 15),
@@ -712,7 +712,7 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
                     fit: BoxFit.contain,
                     errorBuilder: (_, _, _) => const Icon(
                       Icons.broken_image_outlined,
-                      color: Colors.white54,
+                      color: AppColors.white54,
                       size: 48,
                     ),
                   ),
@@ -728,7 +728,7 @@ class _PhotoViewerPageState extends State<PhotoViewerPage> {
                   'Dodał(a): ${photo.uploadedByName}',
                 fmt.date(photo.createdAt),
               ].join(' · '),
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: const TextStyle(color: AppColors.white70, fontSize: 12),
             ),
           ),
         ],
@@ -819,7 +819,7 @@ class _OpeningHoursDisclosure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      data: Theme.of(context).copyWith(dividerColor: AppColors.transparent),
       child: ExpansionTile(
         initiallyExpanded: true,
         tilePadding: EdgeInsets.zero,
@@ -1034,7 +1034,7 @@ class _CommentTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE6E6E6))),
+        border: Border(bottom: BorderSide(color: AppColors.lightDivider)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1306,7 +1306,7 @@ class _EditCommentSheetState extends State<_EditCommentSheet> {
               onPressed: _save,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
+                foregroundColor: AppColors.white,
                 padding: const EdgeInsets.symmetric(vertical: 15),
               ),
               child: const Text('Zapisz'),

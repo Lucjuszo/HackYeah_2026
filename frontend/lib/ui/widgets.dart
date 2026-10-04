@@ -202,7 +202,8 @@ class AmenityBadges extends StatelessWidget {
   }
 }
 
-/// Rating pin on the map; dark for great places, lighter for weaker / unrated ones.
+/// Place pin on the map. The selected state changes its scale, while all pins
+/// use the single brand color from [AppColors.placeMarker].
 class MapMarker extends StatelessWidget {
   const MapMarker({required this.rating, this.selected = false, super.key});
 
@@ -210,11 +211,7 @@ class MapMarker extends StatelessWidget {
   final bool selected;
 
   static Color colorFor(double? rating) {
-    if (rating == null) return const Color(0xFF8A8F94);
-    if (rating >= 4.5) return const Color(0xFF232A31);
-    if (rating >= 4.0) return const Color(0xFF385B4C);
-    if (rating >= 3.0) return const Color(0xFF765843);
-    return const Color(0xFF9A4A3F);
+    return AppColors.placeMarker;
   }
 
   @override
@@ -227,10 +224,10 @@ class MapMarker extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: Colors.white, width: selected ? 2 : 1.2),
+          border: Border.all(color: AppColors.white, width: selected ? 2 : 1.2),
           boxShadow: const <BoxShadow>[
             BoxShadow(
-              color: Color(0x33000000),
+              color: AppColors.subtleShadow,
               blurRadius: 5,
               offset: Offset(0, 2),
             ),
@@ -243,7 +240,7 @@ class MapMarker extends StatelessWidget {
             children: <Widget>[
               Icon(
                 rating == null ? Icons.local_cafe_rounded : Icons.star_rounded,
-                color: Colors.white,
+                color: AppColors.white,
                 size: 12,
               ),
               if (rating != null) ...<Widget>[
@@ -251,7 +248,7 @@ class MapMarker extends StatelessWidget {
                 Text(
                   fmt.decimal(rating!),
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppColors.white,
                     fontWeight: FontWeight.w700,
                     fontSize: 11,
                   ),
@@ -267,11 +264,12 @@ class MapMarker extends StatelessWidget {
 
 /// Grey rounded pill, e.g. "Demo" or "0–30 zł".
 class Pill extends StatelessWidget {
-  const Pill(this.label, {this.icon, this.color, super.key});
+  const Pill(this.label, {this.icon, this.color, this.textColor, super.key});
 
   final String label;
   final IconData? icon;
   final Color? color;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -285,12 +283,15 @@ class Pill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (icon != null) ...<Widget>[
-            Icon(icon, size: 11, color: AppColors.subtle),
+            Icon(icon, size: 11, color: textColor ?? AppColors.subtle),
             const SizedBox(width: 3),
           ],
           Text(
             label,
-            style: const TextStyle(fontSize: 10, color: AppColors.subtle),
+            style: TextStyle(
+              fontSize: 10,
+              color: textColor ?? AppColors.subtle,
+            ),
           ),
         ],
       ),

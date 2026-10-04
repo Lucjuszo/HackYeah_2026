@@ -171,7 +171,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        surfaceTintColor: Colors.transparent,
+        surfaceTintColor: AppColors.transparent,
         elevation: 0,
         leading: IconButton(
           key: const ValueKey<String>('location-back'),

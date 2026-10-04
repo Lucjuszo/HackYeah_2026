@@ -337,7 +337,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
             : Icon(
                 icon,
                 size: 15,
-                color: selected ? Colors.white : AppColors.ink,
+                color: selected ? AppColors.white : AppColors.ink,
               ),
         label: Text(label, style: const TextStyle(fontSize: 12)),
         selected: selected,
@@ -347,7 +347,9 @@ class _AddPlacePageState extends State<AddPlacePage> {
         side: BorderSide.none,
         backgroundColor: AppColors.chip,
         selectedColor: AppColors.primary,
-        labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink),
+        labelStyle: TextStyle(
+          color: selected ? AppColors.white : AppColors.ink,
+        ),
       ),
     );
   }
@@ -402,7 +404,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                 initialZoom: widget.initialZoom,
                 minZoom: 4,
                 maxZoom: 19,
-                backgroundColor: const Color(0xFFF2EFE9),
+                backgroundColor: AppColors.mapBackground,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                 ),
@@ -419,7 +421,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                 SimpleAttributionWidget(
                   source: const Text('OpenStreetMap contributors'),
                   alignment: Alignment.topRight,
-                  backgroundColor: Colors.white.withValues(alpha: 0.75),
+                  backgroundColor: AppColors.white.withValues(alpha: 0.75),
                 ),
               ],
             ),
@@ -440,7 +442,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
               right: 10,
               bottom: 10,
               child: Material(
-                color: Colors.white,
+                color: AppColors.white,
                 elevation: 2,
                 shape: const CircleBorder(),
                 child: InkWell(
@@ -509,7 +511,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        surfaceTintColor: Colors.transparent,
+        surfaceTintColor: AppColors.transparent,
         elevation: 0,
         leading: IconButton(
           tooltip: 'Wróć',
@@ -542,7 +544,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                   child: Container(
                     height: 106,
                     decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFE8DCC5)),
+                      border: Border.all(color: AppColors.photoBorder),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Column(
@@ -732,7 +734,7 @@ class _AddPlacePageState extends State<AddPlacePage> {
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.white,
+                            color: AppColors.white,
                           ),
                         )
                       : const Text('Dodaj'),

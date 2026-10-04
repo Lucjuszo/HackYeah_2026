@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -123,7 +124,8 @@ class MapHomePage extends StatefulWidget {
 
 class _MapHomePageState extends State<MapHomePage> {
   static const double _sheetMin = 0.14;
-  static const double _sheetMax = 0.94;
+  // Keep the search, location and filter controls visible above the expanded list.
+  static const double _sheetMax = 0.78;
 
   final _searchController = TextEditingController();
   final _sheetController = DraggableScrollableController();
@@ -458,7 +460,7 @@ class _MapHomePageState extends State<MapHomePage> {
                         : Icons.radio_button_off_rounded,
                     color: option == value
                         ? AppColors.primary
-                        : const Color(0xFF8A8A8A),
+                        : AppColors.inactiveText,
                   ),
                   title: Text(label(option)),
                   onTap: () {
@@ -480,7 +482,7 @@ class _MapHomePageState extends State<MapHomePage> {
     bool active = false,
     bool chevron = true,
   }) {
-    final foreground = active ? Colors.white : const Color(0xFF222222);
+    final foreground = active ? AppColors.white : AppColors.activeText;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Material(
@@ -600,7 +602,9 @@ class _MapHomePageState extends State<MapHomePage> {
         side: BorderSide.none,
         backgroundColor: AppColors.chip,
         selectedColor: AppColors.primary,
-        labelStyle: TextStyle(color: selected ? Colors.white : AppColors.ink),
+        labelStyle: TextStyle(
+          color: selected ? AppColors.white : AppColors.ink,
+        ),
       ),
     );
   }
@@ -641,13 +645,16 @@ class _MapHomePageState extends State<MapHomePage> {
               const Icon(
                 Icons.info_outline_rounded,
                 size: 15,
-                color: Color(0xFF656565),
+                color: AppColors.infoText,
               ),
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
                   'Możesz łączyć kilka filtrów',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.greyText,
+                  ),
                 ),
               ),
               if (_hasAnyFilter)
@@ -715,11 +722,14 @@ class _MapHomePageState extends State<MapHomePage> {
               decoration: InputDecoration(
                 hintText: 'Szukaj miejscówki',
                 hintStyle: const TextStyle(
-                  color: Color(0xFF7A7A7A),
+                  color: AppColors.hintText,
                   fontSize: 13,
                 ),
                 prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                prefixIconConstraints: const BoxConstraints(minWidth: 44),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 42,
+                ),
                 suffixIcon: _searchController.text.isEmpty
                     ? null
                     : IconButton(
@@ -731,6 +741,10 @@ class _MapHomePageState extends State<MapHomePage> {
                           _setFilter(() {});
                         },
                       ),
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 42,
+                ),
                 isDense: true,
                 contentPadding: EdgeInsets.zero,
                 border: InputBorder.none,
@@ -748,7 +762,7 @@ class _MapHomePageState extends State<MapHomePage> {
               children: <Widget>[
                 Expanded(
                   child: Material(
-                    color: Colors.transparent,
+                    color: AppColors.transparent,
                     child: InkWell(
                       key: const ValueKey<String>('location-picker-trigger'),
                       onTap: _openLocationPicker,
@@ -782,9 +796,9 @@ class _MapHomePageState extends State<MapHomePage> {
                     ),
                   ),
                 ),
-                Container(width: 1, height: 25, color: const Color(0xFF858585)),
+                Container(width: 1, height: 25, color: AppColors.controlBorder),
                 Material(
-                  color: Colors.transparent,
+                  color: AppColors.transparent,
                   child: InkWell(
                     key: const ValueKey<String>('radius-picker-trigger'),
                     onTap: () => _showOptions<_RadiusFilter>(
@@ -865,7 +879,7 @@ class _MapHomePageState extends State<MapHomePage> {
         ),
         minZoom: 4,
         maxZoom: 19,
-        backgroundColor: const Color(0xFFF2EFE9),
+        backgroundColor: AppColors.mapBackground,
         interactionOptions: const InteractionOptions(
           flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
         ),
@@ -904,11 +918,11 @@ class _MapHomePageState extends State<MapHomePage> {
                 height: 22,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2F80ED),
+                    color: AppColors.mapMarker,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
+                    border: Border.all(color: AppColors.white, width: 3),
                     boxShadow: const <BoxShadow>[
-                      BoxShadow(color: Color(0x40000000), blurRadius: 6),
+                      BoxShadow(color: AppColors.shadow, blurRadius: 6),
                     ],
                   ),
                 ),
@@ -938,7 +952,7 @@ class _MapHomePageState extends State<MapHomePage> {
         SimpleAttributionWidget(
           source: const Text('OpenStreetMap contributors'),
           alignment: Alignment.topRight,
-          backgroundColor: Colors.white.withValues(alpha: 0.75),
+          backgroundColor: AppColors.white.withValues(alpha: 0.75),
         ),
       ],
     );
@@ -953,7 +967,7 @@ class _MapHomePageState extends State<MapHomePage> {
     }) => Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Material(
-        color: Colors.white,
+        color: AppColors.white,
         elevation: 2,
         shape: const CircleBorder(),
         child: InkWell(
@@ -1068,7 +1082,7 @@ class _MapHomePageState extends State<MapHomePage> {
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 boxShadow: <BoxShadow>[
                   BoxShadow(
-                    color: Color(0x19000000),
+                    color: AppColors.sheetShadow,
                     blurRadius: 12,
                     offset: Offset(0, -2),
                   ),
@@ -1078,7 +1092,7 @@ class _MapHomePageState extends State<MapHomePage> {
                 children: <Widget>[
                   ListView(
                     controller: scrollController,
-                    cacheExtent: 1600,
+                    scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 92),
                     children: <Widget>[
                       const SizedBox(height: 22),
@@ -1141,7 +1155,7 @@ class _MapHomePageState extends State<MapHomePage> {
                           width: 46,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFB8B8B8),
+                            color: AppColors.loading,
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
@@ -1179,60 +1193,66 @@ class _MapHomePageState extends State<MapHomePage> {
         .firstOrNull;
     return Scaffold(
       body: SafeArea(
+        top: false,
         bottom: false,
-        child: Column(
-          children: <Widget>[
-            _header(),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final sheetTop = constraints.maxHeight * _sheetMin;
-                  return Stack(
-                    children: <Widget>[
-                      _map(),
-                      if (_error != null && _places.isNotEmpty)
-                        Positioned(
-                          top: 10,
-                          left: 16,
-                          right: 16,
-                          child: Material(
-                            color: AppColors.closed,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              child: Text(
-                                _error!,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final sheetTop = constraints.maxHeight * _sheetMin;
+            return Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                AnimatedOpacity(
+                  duration: const Duration(milliseconds: 180),
+                  opacity: _sheetExpanded ? 0 : 1,
+                  child: IgnorePointer(ignoring: _sheetExpanded, child: _map()),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(top: true, bottom: false, child: _header()),
+                ),
+                if (!_sheetExpanded && _error != null && _places.isNotEmpty)
+                  Positioned(
+                    top: 190,
+                    left: 16,
+                    right: 16,
+                    child: Material(
+                      color: AppColors.closed,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(
+                            color: AppColors.white,
+                            fontSize: 12,
                           ),
                         ),
-                      _mapButtons(sheetTop + (selected != null ? 150 : 16)),
-                      if (selected != null)
-                        Positioned(
-                          left: 12,
-                          right: 12,
-                          bottom: sheetTop + 10,
-                          child: _PlacePreviewCard(
-                            place: selected,
-                            distanceM: _distanceTo(selected),
-                            onTap: () => _openDetails(selected),
-                            onClose: () => setState(() => _selectedId = null),
-                          ),
-                        ),
-                      _spotSheet(),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+                      ),
+                    ),
+                  ),
+                if (!_sheetExpanded)
+                  _mapButtons(sheetTop + (selected != null ? 150 : 16)),
+                if (!_sheetExpanded && selected != null)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: sheetTop + 10,
+                    child: _PlacePreviewCard(
+                      place: selected,
+                      distanceM: _distanceTo(selected),
+                      onTap: () => _openDetails(selected),
+                      onClose: () => setState(() => _selectedId = null),
+                    ),
+                  ),
+                _spotSheet(),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1257,9 +1277,9 @@ class _PlacePreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       key: const ValueKey<String>('place-preview'),
-      color: Colors.white,
+      color: AppColors.white,
       elevation: 6,
-      shadowColor: const Color(0x40000000),
+      shadowColor: AppColors.shadow,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -1346,6 +1366,7 @@ class SpotListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = fmt.priceLabel(place.priceRange, place.usagePrice);
+    final atmosphere = place.atmosphere;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
@@ -1359,7 +1380,17 @@ class SpotListTile extends StatelessWidget {
           children: <Widget>[
             Stack(
               children: <Widget>[
-                PlaceImage(url: place.thumbnailUrl, width: 108, height: 108),
+                PlaceImage(url: place.thumbnailUrl, width: 126, height: 126),
+                if (atmosphere != null)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Pill(
+                      atmosphere.label,
+                      color: AppColors.placeMarker,
+                      textColor: AppColors.white,
+                    ),
+                  ),
                 if (place.photoCount > 1)
                   Positioned(
                     right: 6,
@@ -1370,7 +1401,7 @@ class SpotListTile extends StatelessWidget {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0x99000000),
+                        color: AppColors.imageOverlay,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -1379,14 +1410,14 @@ class SpotListTile extends StatelessWidget {
                           const Icon(
                             Icons.photo_library_outlined,
                             size: 10,
-                            color: Colors.white,
+                            color: AppColors.white,
                           ),
                           const SizedBox(width: 3),
                           Text(
                             '${place.photoCount}',
                             style: const TextStyle(
                               fontSize: 10,
-                              color: Colors.white,
+                              color: AppColors.white,
                             ),
                           ),
                         ],

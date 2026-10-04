@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_map: ^8.3.2
+  flutter_svg: ^2.0.17
   geolocator: ^14.1.1
   http: ^1.6.0
   latlong2: ^0.10.1
@@ -24,3 +25,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/focus_map_logo.svg
+    - assets/logo_github.svg

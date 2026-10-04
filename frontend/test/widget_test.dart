@@ -12,7 +12,10 @@ import 'fake_backend.dart';
 
 /// testWidgets that ignores layout overflow warnings: the test font is much wider than real fonts
 /// and the layout is not what these tests check.
-void displayTest(String description, Future<void> Function(WidgetTester tester) body) {
+void displayTest(
+  String description,
+  Future<void> Function(WidgetTester tester) body,
+) {
   testWidgets(description, (WidgetTester tester) async {
     final original = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -33,7 +36,10 @@ class TestAuth {
     : launcher = FakeOAuthLauncher(failure: failure),
       store = MemoryTokenStore()
         ..token = loggedIn
-            ? StoredToken(FakeOAuthLauncher.token, DateTime.now().add(const Duration(hours: 5)))
+            ? StoredToken(
+                FakeOAuthLauncher.token,
+                DateTime.now().add(const Duration(hours: 5)),
+              )
             : null;
 
   final FakeOAuthLauncher launcher;
@@ -57,7 +63,8 @@ Future<FakeBackend> pumpApp(
     MiejscowkiApp(
       api: backend.api(),
       auth: (auth ?? TestAuth()).controller(backend),
-      locationService: location ?? FakeLocationService(result: const LatLon(50.06, 19.94)),
+      locationService:
+          location ?? FakeLocationService(result: const LatLon(50.06, 19.94)),
       showMapTiles: false,
     ),
   );
@@ -66,12 +73,17 @@ Future<FakeBackend> pumpApp(
 }
 
 Future<void> expandSheet(WidgetTester tester) async {
-  await tester.drag(find.byKey(const ValueKey<String>('spot-sheet-handle')), const Offset(0, -600));
+  await tester.drag(
+    find.byKey(const ValueKey<String>('spot-sheet-handle')),
+    const Offset(0, -600),
+  );
   await tester.pumpAndSettle();
 }
 
 Future<void> openLocationPicker(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey<String>('location-picker-trigger')));
+  await tester.tap(
+    find.byKey(const ValueKey<String>('location-picker-trigger')),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -79,7 +91,9 @@ Future<void> openLocationPicker(WidgetTester tester) async {
 final Finder detailsScroll = find
     .descendant(
       of: find.byType(PlaceDetailsPage),
-      matching: find.byWidgetPredicate((Widget w) => w is Scrollable && w.axisDirection == AxisDirection.down),
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+      ),
     )
     .first;
 
@@ -128,7 +142,13 @@ void main() {
       await tester.pumpAndSettle();
       final preview = find.byKey(const ValueKey<String>('place-preview'));
       expect(preview, findsOneWidget);
-      expect(find.descendant(of: preview, matching: find.text('Kawiarnia Pod Kodem')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: preview,
+          matching: find.text('Kawiarnia Pod Kodem'),
+        ),
+        findsOneWidget,
+      );
     });
   });
 
@@ -160,15 +180,23 @@ void main() {
   });
 
   group('lokalizacja', () {
-    displayTest('wyszukiwarka adresów pokazuje wyniki z backendu', (tester) async {
+    displayTest('wyszukiwarka adresów pokazuje wyniki z backendu', (
+      tester,
+    ) async {
       final backend = await pumpApp(tester);
       await openLocationPicker(tester);
       expect(find.text('Wybierz lokalizację'), findsOneWidget);
 
-      await tester.enterText(find.byKey(const ValueKey<String>('location-search')), 'Gdańsk');
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('location-search')),
+        'Gdańsk',
+      );
       await tester.pumpAndSettle(const Duration(milliseconds: 500));
       expect(backend.requests.any((u) => u.path == '/geocode'), isTrue);
-      expect(find.text('Gdańsk, województwo pomorskie, Polska'), findsOneWidget);
+      expect(
+        find.text('Gdańsk, województwo pomorskie, Polska'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Gdańsk, województwo pomorskie, Polska'));
       await tester.pumpAndSettle();
@@ -186,7 +214,9 @@ void main() {
     displayTest('brak zgody na GPS pokazuje komunikat', (tester) async {
       await pumpApp(
         tester,
-        location: FakeLocationService(failure: const LocationFailure('Brak zgody na lokalizację.')),
+        location: FakeLocationService(
+          failure: const LocationFailure('Brak zgody na lokalizację.'),
+        ),
       );
       await openLocationPicker(tester);
       await tester.tap(find.byKey(const ValueKey<String>('use-my-location')));
@@ -196,7 +226,10 @@ void main() {
   });
 
   group('szczegóły miejsca', () {
-    Future<FakeBackend> openDetails(WidgetTester tester, {FakeBackend? backend}) async {
+    Future<FakeBackend> openDetails(
+      WidgetTester tester, {
+      FakeBackend? backend,
+    }) async {
       backend = await pumpApp(tester, backend: backend);
       await expandSheet(tester);
       await tester.tap(find.text('Kawiarnia Pod Kodem'));
@@ -221,8 +254,14 @@ void main() {
     });
 
     displayTest('pokazuje opinie i doczytuje kolejne', (tester) async {
-      final backend = await openDetails(tester, backend: FakeBackend(comments: 13));
-      expect(backend.requests.any((u) => u.path == '/places/p1/comments'), isTrue);
+      final backend = await openDetails(
+        tester,
+        backend: FakeBackend(comments: 13),
+      );
+      expect(
+        backend.requests.any((u) => u.path == '/places/p1/comments'),
+        isTrue,
+      );
 
       await tester.ensureVisible(find.text('Opinia numer 0'));
       await tester.pumpAndSettle();
@@ -256,55 +295,41 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    displayTest('użytkownik wybiera GitHub albo Google', (tester) async {
+    displayTest('użytkownik loguje się przez GitHub', (tester) async {
       final auth = TestAuth();
       await pumpApp(tester, auth: auth);
       await openLoginByRating(tester);
 
-      expect(find.text('Zaloguj się'), findsOneWidget);
-      expect(find.text('Kontynuuj z GitHub'), findsOneWidget);
-      expect(find.text('Kontynuuj z Google'), findsOneWidget);
+      expect(find.text('Połącz z GitHub'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('login-google')), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey<String>('login-github')));
       await tester.pumpAndSettle();
       expect(auth.launcher.logins.single.path, '/auth/github/login');
       expect(auth.store.token?.accessToken, FakeOAuthLauncher.token);
-      expect(find.text('Zaloguj się'), findsNothing);
     });
 
-    displayTest('Google', (tester) async {
-      final auth = TestAuth();
-      await pumpApp(tester, auth: auth);
-      await openLoginByRating(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('login-google')));
-      await tester.pumpAndSettle();
-      expect(auth.launcher.logins.single.path, '/auth/google/login');
-    });
-
-    displayTest('tylko skonfigurowani dostawcy', (tester) async {
-      final backend = FakeBackend()..providers = ['google'];
-      await pumpApp(tester, backend: backend);
-      await openLoginByRating(tester);
-      expect(find.text('Kontynuuj z Google'), findsOneWidget);
-      expect(find.text('Kontynuuj z GitHub'), findsNothing);
-    });
-
-    displayTest('anulowane logowanie zostaje w arkuszu z komunikatem', (tester) async {
-      final backend = await pumpApp(tester, auth: TestAuth(failure: const LoginException('Logowanie anulowane.')));
+    displayTest('anulowane logowanie zostaje na stronie z komunikatem', (
+      tester,
+    ) async {
+      final backend = await pumpApp(
+        tester,
+        auth: TestAuth(failure: const LoginException('Logowanie anulowane.')),
+      );
       await openLoginByRating(tester);
       await tester.tap(find.byKey(const ValueKey<String>('login-github')));
       await tester.pumpAndSettle();
       expect(find.text('Logowanie anulowane.'), findsOneWidget);
-      expect(find.text('Zaloguj się'), findsOneWidget);
+      expect(find.text('Połącz z GitHub'), findsOneWidget);
       expect(backend.myRatings, isEmpty);
     });
 
-    displayTest('zamknięcie arkusza nic nie zapisuje', (tester) async {
+    displayTest('powrót ze strony logowania nic nie zapisuje', (tester) async {
       final backend = await pumpApp(tester);
       await openLoginByRating(tester);
-      await tester.tapAt(const Offset(450, 20)); // outside the sheet
+      await tester.tap(find.byKey(const ValueKey<String>('login-back')));
       await tester.pumpAndSettle();
-      expect(find.text('Zaloguj się'), findsNothing);
+      expect(find.text('Połącz z GitHub'), findsNothing);
       expect(backend.myRatings, isEmpty);
     });
   });
@@ -331,7 +356,10 @@ void main() {
       await tapKey(tester, 'rate-5');
       expect(backend.myRatings['p1'], 5);
       expect(find.text('Twoja ocena'), findsOneWidget);
-      expect(find.text('13 ocen'), findsOneWidget); // summary from the API response
+      expect(
+        find.text('13 ocen'),
+        findsOneWidget,
+      ); // summary from the API response
       expect(find.text('5,0'), findsWidgets);
 
       await tapKey(tester, 'remove-rating');
@@ -344,14 +372,22 @@ void main() {
       await pumpApp(tester, backend: backend, auth: TestAuth(loggedIn: true));
       await openPlace(tester);
       expect(find.text('Twoja ocena'), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('remove-rating')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('remove-rating')),
+        findsOneWidget,
+      );
     });
 
     displayTest('dodanie opinii pokazuje ją na górze listy', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openPlace(tester);
-      await tester.ensureVisible(find.byKey(const ValueKey<String>('comment-input')));
-      await tester.enterText(find.byKey(const ValueKey<String>('comment-input')), 'Świetna kawa i cisza');
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('comment-input')),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('comment-input')),
+        'Świetna kawa i cisza',
+      );
       await tapKey(tester, 'comment-send');
 
       expect(backend.commentsOf('p1').first['text'], 'Świetna kawa i cisza');
@@ -366,20 +402,33 @@ void main() {
       expect(backend.commentsOf('p1'), hasLength(3));
     });
 
-    displayTest('własną opinię można edytować i usunąć, cudzej nie', (tester) async {
+    displayTest('własną opinię można edytować i usunąć, cudzej nie', (
+      tester,
+    ) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openPlace(tester);
-      expect(find.byKey(const ValueKey<String>('comment-menu-c0')), findsNothing); // someone else's
+      expect(
+        find.byKey(const ValueKey<String>('comment-menu-c0')),
+        findsNothing,
+      ); // someone else's
 
-      await tester.ensureVisible(find.byKey(const ValueKey<String>('comment-input')));
-      await tester.enterText(find.byKey(const ValueKey<String>('comment-input')), 'Pierwsza wersja');
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('comment-input')),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('comment-input')),
+        'Pierwsza wersja',
+      );
       await tapKey(tester, 'comment-send');
       final id = backend.commentsOf('p1').first['id'] as String;
 
       await tapKey(tester, 'comment-menu-$id');
       await tester.tap(find.text('Edytuj'));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const ValueKey<String>('edit-comment-input')), 'Poprawiona wersja');
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('edit-comment-input')),
+        'Poprawiona wersja',
+      );
       await tester.tap(find.byKey(const ValueKey<String>('edit-comment-save')));
       await tester.pumpAndSettle();
       expect(find.text('Poprawiona wersja'), findsOneWidget);
@@ -394,29 +443,40 @@ void main() {
       expect(backend.commentsOf('p1'), hasLength(3));
     });
 
-    displayTest('niezalogowany: opinia czeka na logowanie i zapisuje się po nim', (tester) async {
-      final auth = TestAuth();
-      final backend = await pumpApp(tester, auth: auth);
-      await openPlace(tester);
-      await tester.ensureVisible(find.byKey(const ValueKey<String>('comment-input')));
-      await tester.enterText(find.byKey(const ValueKey<String>('comment-input')), 'Po zalogowaniu');
-      await tapKey(tester, 'comment-send');
-      await tester.tap(find.byKey(const ValueKey<String>('login-google')));
-      await tester.pumpAndSettle();
-      expect(backend.commentsOf('p1').first['text'], 'Po zalogowaniu');
-      expect(find.text('Po zalogowaniu'), findsOneWidget);
-    });
+    displayTest(
+      'niezalogowany: opinia czeka na logowanie i zapisuje się po nim',
+      (tester) async {
+        final auth = TestAuth();
+        final backend = await pumpApp(tester, auth: auth);
+        await openPlace(tester);
+        await tester.ensureVisible(
+          find.byKey(const ValueKey<String>('comment-input')),
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey<String>('comment-input')),
+          'Po zalogowaniu',
+        );
+        await tapKey(tester, 'comment-send');
+        await tester.tap(find.byKey(const ValueKey<String>('login-github')));
+        await tester.pumpAndSettle();
+        expect(backend.commentsOf('p1').first['text'], 'Po zalogowaniu');
+        expect(find.text('Po zalogowaniu'), findsOneWidget);
+      },
+    );
 
-    displayTest('wygasła sesja: token jest zapominany, akcja prosi o ponowne logowanie', (tester) async {
-      final auth = TestAuth(loggedIn: true);
-      final backend = FakeBackend()..validToken = 'nowy-token';
-      await pumpApp(tester, backend: backend, auth: auth);
-      await openPlace(tester); // GET /auth/me -> 401
-      expect(auth.store.token, isNull);
-      await tapKey(tester, 'rate-4');
-      expect(find.text('Zaloguj się'), findsOneWidget);
-      expect(backend.myRatings, isEmpty);
-    });
+    displayTest(
+      'wygasła sesja: token jest zapominany, akcja prosi o ponowne logowanie',
+      (tester) async {
+        final auth = TestAuth(loggedIn: true);
+        final backend = FakeBackend()..validToken = 'nowy-token';
+        await pumpApp(tester, backend: backend, auth: auth);
+        await openPlace(tester); // GET /auth/me -> 401
+        expect(auth.store.token, isNull);
+        await tapKey(tester, 'rate-4');
+        expect(find.byKey(const ValueKey<String>('login-github')), findsOneWidget);
+        expect(backend.myRatings, isEmpty);
+      },
+    );
   });
 
   group('dodawanie miejsca', () {
@@ -434,7 +494,10 @@ void main() {
         scrollable: find
             .descendant(
               of: find.byType(AddPlacePage),
-              matching: find.byWidgetPredicate((Widget w) => w is Scrollable && w.axisDirection == AxisDirection.down),
+              matching: find.byWidgetPredicate(
+                (Widget w) =>
+                    w is Scrollable && w.axisDirection == AxisDirection.down,
+              ),
             )
             .first,
       );
@@ -450,13 +513,21 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    displayTest('formularz pokazuje adres pinezki i wysyła wszystkie pola', (tester) async {
+    displayTest('formularz pokazuje adres pinezki i wysyła wszystkie pola', (
+      tester,
+    ) async {
       final auth = TestAuth();
       final backend = await pumpApp(tester, auth: auth);
       await openForm(tester);
-      expect(find.text('Floriańska 15, Kraków'), findsOneWidget); // reverse geocoding of the pin
+      expect(
+        find.text('Floriańska 15, Kraków'),
+        findsOneWidget,
+      ); // reverse geocoding of the pin
 
-      await tester.enterText(find.byKey(const ValueKey<String>('new-place-name')), 'Nowa Kawiarnia');
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('new-place-name')),
+        'Nowa Kawiarnia',
+      );
       await tapKey(tester, 'amenity-wifi');
       await tapKey(tester, 'amenity-power_outlets');
       await tester.tap(find.text('Spokojnie'));
@@ -481,7 +552,10 @@ void main() {
       expect(body['amenities'], {'wifi': true, 'power_outlets': true});
       expect(body['atmosphere'], 'quiet');
       expect(body['usage_price'], '0-30');
-      expect(body['opening_hours'], {'always_open': true, 'periods': <Object>[]});
+      expect(body['opening_hours'], {
+        'always_open': true,
+        'periods': <Object>[],
+      });
 
       // Back on the map, the new place's details are open.
       expect(find.text('Dodano: Nowa Kawiarnia'), findsOneWidget);
@@ -491,7 +565,10 @@ void main() {
     displayTest('własne godziny: Pon–Pt i Sob–Nd', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openForm(tester);
-      await tester.enterText(find.byKey(const ValueKey<String>('new-place-name')), 'Biblioteka');
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('new-place-name')),
+        'Biblioteka',
+      );
       await tapKey(tester, 'hours-custom');
       expect(find.text('Pon–Pt'), findsOneWidget);
       expect(find.text('8:00'), findsOneWidget);
@@ -517,7 +594,10 @@ void main() {
       await pumpApp(tester, backend: backend, auth: TestAuth(loggedIn: true));
       await openForm(tester);
       expect(find.textContaining('Tu nie ma adresu'), findsWidgets);
-      await tester.enterText(find.byKey(const ValueKey<String>('new-place-name')), 'Na morzu');
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('new-place-name')),
+        'Na morzu',
+      );
       await submit(tester);
       expect(backend.created, isEmpty);
     });
@@ -525,13 +605,23 @@ void main() {
     displayTest('wyszukanie adresu przenosi pinezkę', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openForm(tester);
-      final before = backend.requests.where((u) => u.path == '/geocode/reverse').length;
-      await tester.enterText(find.byKey(const ValueKey<String>('new-place-address-search')), 'Gdańsk');
+      final before = backend.requests
+          .where((u) => u.path == '/geocode/reverse')
+          .length;
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('new-place-address-search')),
+        'Gdańsk',
+      );
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pumpAndSettle(const Duration(seconds: 1));
-      final reverse = backend.requests.where((u) => u.path == '/geocode/reverse').toList();
+      final reverse = backend.requests
+          .where((u) => u.path == '/geocode/reverse')
+          .toList();
       expect(reverse.length, greaterThan(before));
-      expect(double.parse(reverse.last.queryParameters['lat']!), closeTo(54.352, 0.001));
+      expect(
+        double.parse(reverse.last.queryParameters['lat']!),
+        closeTo(54.352, 0.001),
+      );
     });
   });
 }
