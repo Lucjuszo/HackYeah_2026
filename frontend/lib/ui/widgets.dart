@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/models.dart';
+import '../services/travel_time_service.dart';
 import 'format.dart' as fmt;
 import 'theme.dart';
 
@@ -299,6 +300,65 @@ class Pill extends StatelessWidget {
   }
 }
 
+/// "‹" back button of the full-screen pages.
+class BackChevron extends StatelessWidget {
+  const BackChevron({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: const ValueKey<String>('back'),
+      tooltip: 'Wróć',
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.ink),
+      onPressed: () => Navigator.of(context).maybePop(),
+    );
+  }
+}
+
+/// Outlined rounded button, e.g. a recent search.
+class OutlinePill extends StatelessWidget {
+  const OutlinePill({
+    required this.label,
+    required this.onPressed,
+    this.leading,
+    this.fontSize = 12,
+    this.height = 30,
+    super.key,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final Widget? leading;
+  final double fontSize;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.ink,
+          side: const BorderSide(color: AppColors.divider),
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (leading case final icon?) ...<Widget>[
+              icon,
+              const SizedBox(width: 6),
+            ],
+            Text(label, style: TextStyle(fontSize: fontSize)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Centered message with an optional retry button (errors, empty results).
 class MessageView extends StatelessWidget {
   const MessageView({
@@ -346,6 +406,112 @@ class MessageView extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// "🚶 12 min · 🚲 5 min · 🚗 4 min" from [from] to [to], by road (loads on its own).
+class TravelTimesLine extends StatefulWidget {
+  const TravelTimesLine({
+    required this.service,
+    required this.from,
+    required this.to,
+    this.fromLabel,
+    this.fontSize = 12,
+    super.key,
+  });
+
+  final TravelTimeService service;
+  final LatLon from;
+  final LatLon to;
+
+  /// "Moja lokalizacja", a city name...; shown as "z: ..." when not the device.
+  final String? fromLabel;
+  final double fontSize;
+
+  @override
+  State<TravelTimesLine> createState() => _TravelTimesLineState();
+}
+
+class _TravelTimesLineState extends State<TravelTimesLine> {
+  late Future<TravelTimes> _times;
+
+  @override
+  void initState() {
+    super.initState();
+    _times = widget.service.between(widget.from, widget.to);
+  }
+
+  @override
+  void didUpdateWidget(TravelTimesLine old) {
+    super.didUpdateWidget(old);
+    if (old.from.lat != widget.from.lat ||
+        old.from.lon != widget.from.lon ||
+        old.to.lat != widget.to.lat ||
+        old.to.lon != widget.to.lon) {
+      _times = widget.service.between(widget.from, widget.to);
+    }
+  }
+
+  static IconData _icon(TravelMode mode) => switch (mode) {
+    TravelMode.walk => Icons.directions_walk_rounded,
+    TravelMode.bike => Icons.directions_bike_rounded,
+    TravelMode.car => Icons.directions_car_rounded,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(fontSize: widget.fontSize, color: AppColors.subtle);
+    final iconSize = widget.fontSize + 3;
+    return FutureBuilder<TravelTimes>(
+      future: _times,
+      builder: (BuildContext context, AsyncSnapshot<TravelTimes> snapshot) {
+        final times = snapshot.data;
+        if (times == null) {
+          if (snapshot.connectionState == ConnectionState.done) {
+            return const SizedBox.shrink();
+          }
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              SizedBox(
+                width: widget.fontSize,
+                height: widget.fontSize,
+                child: const CircularProgressIndicator(strokeWidth: 1.5),
+              ),
+              const SizedBox(width: 6),
+              Text('Liczę czas dojazdu…', style: style),
+            ],
+          );
+        }
+        if (times.isEmpty) return const SizedBox.shrink();
+        return Wrap(
+          key: const ValueKey<String>('travel-times'),
+          spacing: 10,
+          runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            for (final MapEntry(key: mode, value: duration)
+                in times.durations.entries)
+              Tooltip(
+                message: mode.label,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(_icon(mode), size: iconSize, color: AppColors.subtle),
+                    const SizedBox(width: 2),
+                    Text(fmt.travelDuration(duration), style: style),
+                  ],
+                ),
+              ),
+            if (widget.fromLabel case final label?)
+              Text(
+                'z: $label',
+                style: style.copyWith(color: AppColors.muted),
+              ),
+          ],
+        );
+      },
     );
   }
 }

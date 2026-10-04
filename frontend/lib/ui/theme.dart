@@ -11,6 +11,7 @@ class AppColors {
   static const Color surface = Color(0xFFFFFEFB);
   static const Color subtle = Color(0xFF5C564D);
   static const Color muted = Color(0xFF817A70);
+  static const Color secondary = Color(0xFF8A8A8A);
   static const Color divider = Color(0xFFE3DED5);
   static const Color field = Color(0xFFE4E1DD);
   static const Color formField = Color(0xFFF5EEDD);
