@@ -538,8 +538,8 @@ class _MapHomePageState extends State<MapHomePage> {
     final start = _location.isDevice && point != null
         ? point
         : LatLon(camera.center.latitude, camera.center.longitude);
-    final place = await Navigator.of(context).push<Place>(
-      MaterialPageRoute<Place>(
+    final added = await Navigator.of(context).push<AddedPlace>(
+      MaterialPageRoute<AddedPlace>(
         builder: (_) => AddPlacePage(
           api: widget.api,
           auth: widget.auth,
@@ -551,8 +551,13 @@ class _MapHomePageState extends State<MapHomePage> {
         ),
       ),
     );
-    if (place == null || !mounted) return;
-    _toast('Dodano: ${place.name}');
+    if (added == null || !mounted) return;
+    final place = added.place;
+    _toast(
+      added.photoError == null
+          ? 'Dodano: ${place.name}'
+          : 'Dodano: ${place.name}. ${added.photoError}',
+    );
     _mapController.move(
       LatLng(place.location.lat, place.location.lon),
       math.max(camera.zoom, 16),

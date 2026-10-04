@@ -72,7 +72,7 @@ Każdy push na wybraną gałąź wdraża się sam.
 - MongoDB Atlas → Security → Network Access: dodaj `0.0.0.0/0`, bo Render (plan free) nie ma stałego IP.
 - Jeśli Render nada inne adresy niż powyższe, popraw `API_URL`, `CORS_ORIGINS` i `PUBLIC_BASE_URL`.
 - Plan free usypia backend po 15 min bez ruchu; pierwsze zapytanie po przerwie trwa do ~1 min.
-- Zdjęcia leżą na dysku serwisu i znikają przy każdym wdrożeniu (do zmiany na zewnętrzny storage).
+- Zdjęcia trzymamy w Cloudinary (`CLOUDINARY_URL` w Dashboardzie), więc przetrwają wdrożenia. Bez tej zmiennej lądują na dysku serwisu i znikają przy każdym deployu.
 
 ## Testy
 

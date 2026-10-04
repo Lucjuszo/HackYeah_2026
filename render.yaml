@@ -47,6 +47,12 @@ services:
         sync: false
       - key: ADMIN_EMAILS
         sync: false
+      # Zdjęcia w Cloudinary (dysk Rendera znika przy każdym deployu). Wpisz w Dashboardzie
+      # CLOUDINARY_URL z panelu Cloudinary: cloudinary://<api_key>:<api_secret>@<cloud_name>
+      - key: STORAGE_BACKEND
+        value: cloudinary
+      - key: CLOUDINARY_URL
+        sync: false
 
   # Frontend: Flutter web, działa w przeglądarce telefonu i komputera
   - type: web

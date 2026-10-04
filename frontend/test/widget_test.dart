@@ -1,6 +1,7 @@
 // Checks only that data from the backend shows up (not how it looks).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:miejscowki_map/api/models.dart';
 import 'package:miejscowki_map/auth/auth.dart';
 import 'package:miejscowki_map/main.dart';
@@ -48,6 +49,16 @@ class TestAuth {
 
   AuthController controller(FakeBackend backend) =>
       AuthController(api: backend.api(), store: store, launcher: launcher);
+}
+
+/// Installs a fake gallery for the current test.
+FakeImagePicker fakePicker([List<String> names = const <String>[]]) {
+  final picker = FakeImagePicker()
+    ..files = [for (final name in names) FakeImagePicker.photo(name)];
+  final original = ImagePickerPlatform.instance;
+  ImagePickerPlatform.instance = picker;
+  addTearDown(() => ImagePickerPlatform.instance = original);
+  return picker;
 }
 
 Future<FakeBackend> pumpApp(
@@ -340,6 +351,69 @@ void main() {
       await tester.ensureVisible(find.text('Flat white'));
       await tester.pumpAndSettle();
       expect(find.text('14,00 zł'), findsOneWidget);
+    });
+
+    displayTest('dodaje zdjęcia z galerii', (tester) async {
+      fakePicker(['a.jpg', 'b.jpg']);
+      final backend = FakeBackend();
+      await pumpApp(tester, backend: backend, auth: TestAuth(loggedIn: true));
+      await expandSheet(tester);
+      await tester.tap(find.text('Kawiarnia Pod Kodem'));
+      await tester.pumpAndSettle();
+
+      final add = find.byKey(const ValueKey<String>('add-photo'));
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      expect(backend.uploadedPhotos, [('p1', 'a.jpg'), ('p1', 'b.jpg')]);
+      expect(find.text('Dodano 2 zdjęć.'), findsOneWidget);
+    });
+
+    displayTest('błąd wysyłki zdjęcia jest pokazany', (tester) async {
+      fakePicker(['a.jpg']);
+      final backend = FakeBackend()..photoUploadError = 415;
+      await pumpApp(tester, backend: backend, auth: TestAuth(loggedIn: true));
+      await expandSheet(tester);
+      await tester.tap(find.text('Kawiarnia Pod Kodem'));
+      await tester.pumpAndSettle();
+
+      final add = find.byKey(const ValueKey<String>('add-photo'));
+      await tester.ensureVisible(add);
+      await tester.pumpAndSettle();
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ten plik nie jest obsługiwanym zdjęciem.'), findsOneWidget);
+    });
+
+    displayTest('autor usuwa swoje zdjęcie, cudzego nie może', (tester) async {
+      final backend = FakeBackend();
+      await pumpApp(tester, backend: backend, auth: TestAuth(loggedIn: true));
+      await expandSheet(tester);
+      await tester.tap(find.text('Kawiarnia Pod Kodem'));
+      await tester.pumpAndSettle();
+
+      // Header photo 1 of 2 is the test user's own.
+      await tester.tap(find.byType(PageView).first);
+      await tester.pumpAndSettle();
+      expect(find.text('1 z 2'), findsOneWidget);
+      await tester.drag(find.byType(PageView).last, const Offset(-800, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('2 z 2'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('delete-photo')), findsNothing);
+      await tester.drag(find.byType(PageView).last, const Offset(800, 0));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey<String>('delete-photo')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('confirm-delete-photo')));
+      await tester.pumpAndSettle();
+
+      expect(backend.deletedPhotos, [('p1', 'ph0')]);
+      expect(find.text('1 z 2'), findsNothing); // viewer closed
+      expect(find.text('Usunięto zdjęcie.'), findsOneWidget);
     });
 
     displayTest('pokazuje opinie i doczytuje kolejne', (tester) async {
@@ -693,6 +767,32 @@ void main() {
       expect(find.text('Udogodnienia'), findsOneWidget);
     });
 
+    displayTest('wybrane zdjęcia są wysyłane po utworzeniu miejsca', (
+      tester,
+    ) async {
+      fakePicker(['front.jpg', 'inside.jpg']);
+      final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
+      await openForm(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('new-place-photos')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('new-place-chosen-photos')),
+        findsOneWidget,
+      );
+      // Changed my mind about the second one.
+      await tester.tap(find.byKey(const ValueKey<String>('remove-photo-1')));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('new-place-name')),
+        'Ze Zdjęciem',
+      );
+      await submit(tester);
+
+      expect(backend.uploadedPhotos, [('new1', 'front.jpg')]);
+      expect(find.text('Dodano: Ze Zdjęciem'), findsOneWidget);
+    });
+
     displayTest('własne godziny: te same codziennie', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openForm(tester);
@@ -716,10 +816,10 @@ void main() {
       ]);
     });
 
-    displayTest('godziny „Nie wiem” nie pokazują wymyślonych godzin', (tester) async {
+    displayTest('nieznane godziny nie pokazują wymyślonych godzin', (tester) async {
       final backend = await pumpApp(tester, auth: TestAuth(loggedIn: true));
       await openForm(tester);
-      expect(find.text('Nie wiem'), findsOneWidget);
+      expect(find.text('Nie znane'), findsOneWidget);
       await tester.enterText(find.byKey(const ValueKey<String>('new-place-name')), 'Czytelnia');
       await submit(tester);
       expect(backend.created.single.containsKey('opening_hours'), isFalse);

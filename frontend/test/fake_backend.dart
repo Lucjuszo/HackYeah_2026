@@ -1,12 +1,15 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:miejscowki_map/api/models.dart';
 import 'package:miejscowki_map/api/places_api.dart';
 import 'package:miejscowki_map/auth/auth.dart';
 import 'package:miejscowki_map/services/location_service.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 Json summaryJson(
   String id,
@@ -65,7 +68,9 @@ Json placeJson(String id, String name) => {
         'height': 900,
         'size': 1000,
         'thumbnail': {'url': '/media/places/$id/ph${i}_thumb.webp', 'width': 400, 'height': 225, 'size': 100},
-        'uploaded_by_name': 'Anna',
+        // The first one is the test user's own: they may delete it.
+        'uploaded_by': i == 0 ? 'me' : 'anna',
+        'uploaded_by_name': i == 0 ? 'Ja Testowy' : 'Anna',
         'created_at': '2026-10-01T10:00:00Z',
       },
   ],
@@ -109,6 +114,15 @@ class FakeBackend {
 
   /// Bodies of POST /places.
   final List<Json> created = [];
+
+  /// (place id, file name) of every POST /places/{id}/photos.
+  final List<(String, String)> uploadedPhotos = [];
+
+  /// (place id, photo id) of every DELETE /places/{id}/photos/{photoId}.
+  final List<(String, String)> deletedPhotos = [];
+
+  /// Status to answer photo uploads with instead of 201.
+  int? photoUploadError;
 
   /// The only token the logged-in endpoints accept.
   String validToken = FakeOAuthLauncher.token;
@@ -227,6 +241,34 @@ class FakeBackend {
       }
     }
 
+    // /places/{id}/photos[/{photoId}]
+    if (path.length >= 3 && path[0] == 'places' && path[2] == 'photos') {
+      if (!loggedIn) return _error(401, 'Invalid or expired token');
+      if (path.length == 3 && method == 'POST') {
+        final error = photoUploadError;
+        if (error != null) return _error(error, 'Upload failed');
+        final name = RegExp(r'filename="([^"]*)"').firstMatch(latin1.decode(request.bodyBytes))?.group(1) ?? '';
+        uploadedPhotos.add((path[1], name));
+        final id = 'up${uploadedPhotos.length}';
+        return _json({
+          'id': id,
+          'url': '/media/places/${path[1]}/$id.webp',
+          'content_type': 'image/webp',
+          'width': 1600,
+          'height': 900,
+          'size': 1000,
+          'thumbnail': {'url': '/media/places/${path[1]}/${id}_thumb.webp', 'width': 400, 'height': 225, 'size': 100},
+          'uploaded_by': me['id'],
+          'uploaded_by_name': me['name'],
+          'created_at': DateTime.now().toUtc().toIso8601String(),
+        }, status: 201);
+      }
+      if (path.length == 4 && method == 'DELETE') {
+        deletedPhotos.add((path[1], path[3]));
+        return http.Response('', 204);
+      }
+    }
+
     // /places/{id}/comments[/{commentId}]
     if (path.length >= 3 && path[0] == 'places' && path[2] == 'comments') {
       final list = commentsOf(path[1]);
@@ -304,5 +346,33 @@ class FakeLocationService extends LocationService {
   Future<LatLon> currentLocation() async {
     if (failure != null) throw failure!;
     return result!;
+  }
+
+  @override
+  Future<bool> requestPermission() async => true;
+}
+
+/// Stands in for the gallery: "picks" [files] (or nothing when null = cancelled). No camera.
+class FakeImagePicker extends ImagePickerPlatform with MockPlatformInterfaceMixin {
+  List<XFile>? files;
+  int picks = 0;
+
+  static XFile photo(String name) => XFile.fromData(Uint8List.fromList([1, 2, 3]), name: name, path: name, mimeType: 'image/jpeg');
+
+  @override
+  bool supportsImageSource(ImageSource source) => source == ImageSource.gallery;
+
+  @override
+  Future<List<XFile>> getMultiImageWithOptions({MultiImagePickerOptions options = const MultiImagePickerOptions()}) async {
+    picks++;
+    final limit = options.limit;
+    final chosen = files ?? const <XFile>[];
+    return limit == null ? chosen : chosen.take(limit).toList();
+  }
+
+  @override
+  Future<XFile?> getImageFromSource({required ImageSource source, ImagePickerOptions options = const ImagePickerOptions()}) async {
+    picks++;
+    return files?.firstOrNull;
   }
 }

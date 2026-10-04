@@ -23,6 +23,9 @@ os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-secret"
 os.environ["ADMIN_EMAILS"] = "boss@example.com"
 os.environ["AUTH_DEV_LOGIN"] = "false"
 os.environ.pop("AUTH_REDIRECT_URL", None)
+# Photos on the local temp disk, never in a real Cloudinary account.
+for _var in ("STORAGE_BACKEND", "CLOUDINARY_URL", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"):
+    os.environ.pop(_var, None)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
