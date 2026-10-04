@@ -14,6 +14,7 @@ import 'ui/add_place_page.dart';
 import 'ui/format.dart' as fmt;
 import 'ui/location_picker_page.dart';
 import 'ui/place_details_page.dart';
+import 'ui/search_page.dart';
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
 
@@ -159,6 +160,7 @@ class _MapHomePageState extends State<MapHomePage> {
   // Location: reference point for distances ("Moja lokalizacja", a searched city...)
   LocationChoice _location = LocationChoice.wholeCountry;
   final List<LocationChoice> _recentLocations = <LocationChoice>[];
+  final List<String> _recentSearches = <String>[];
 
   // Results
   List<PlaceSummary> _places = const <PlaceSummary>[];
@@ -784,6 +786,31 @@ class _MapHomePageState extends State<MapHomePage> {
     });
   }
 
+  Future<void> _openSearch() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final query = await Navigator.of(context).push<String>(
+      PageRouteBuilder<String>(
+        transitionDuration: const Duration(milliseconds: 200),
+        reverseTransitionDuration: const Duration(milliseconds: 150),
+        pageBuilder: (_, _, _) => SearchPage(
+          initial: _searchController.text,
+          recent: _recentSearches,
+        ),
+        transitionsBuilder: (_, animation, _, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
+    if (!mounted || query == null) return; // back = keep the current search
+    _searchController.text = query;
+    if (query.isNotEmpty) {
+      _recentSearches
+        ..remove(query)
+        ..insert(0, query);
+      if (_recentSearches.length > 6) _recentSearches.removeLast();
+    }
+    _setFilter(() {});
+  }
+
   Widget _header() {
     final locationLabel = _location == LocationChoice.wholeCountry
         ? 'Lokalizacja'
@@ -802,12 +829,11 @@ class _MapHomePageState extends State<MapHomePage> {
               key: const ValueKey<String>('place-search'),
               controller: _searchController,
               textAlignVertical: TextAlignVertical.center,
-              textInputAction: TextInputAction.search,
-              onChanged: (_) {
-                setState(() {});
-                _reloadSoon(const Duration(milliseconds: 350));
-              },
-              onSubmitted: (_) => _reload(),
+              // Typing happens on the search screen: no keyboard over the map.
+              readOnly: true,
+              showCursor: false,
+              enableInteractiveSelection: false,
+              onTap: _openSearch,
               decoration: InputDecoration(
                 hintText: 'Szukaj miejscówki',
                 hintStyle: const TextStyle(
@@ -1070,16 +1096,14 @@ class _MapHomePageState extends State<MapHomePage> {
     Widget button(
       IconData icon,
       String tooltip,
-      VoidCallback onTap, {
-      Key? key,
-    }) => Padding(
+      VoidCallback onTap,
+    ) => Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Material(
         color: Colors.white,
         elevation: 2,
         shape: const CircleBorder(),
         child: InkWell(
-          key: key,
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: Tooltip(
@@ -1103,11 +1127,6 @@ class _MapHomePageState extends State<MapHomePage> {
               'Wróć do: ${_location.label}',
               () => _showLocation(_location),
             ),
-          button(Icons.public_rounded, 'Cała Polska', () {
-            _userMovedMap = true;
-            setState(() => _location = LocationChoice.wholeCountry);
-            _showLocation(LocationChoice.wholeCountry);
-          }, key: const ValueKey<String>('show-poland')),
         ],
       ),
     );

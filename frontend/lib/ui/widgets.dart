@@ -299,6 +299,65 @@ class Pill extends StatelessWidget {
   }
 }
 
+/// "‹" back button of the full-screen pages.
+class BackChevron extends StatelessWidget {
+  const BackChevron({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: const ValueKey<String>('back'),
+      tooltip: 'Wróć',
+      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.ink),
+      onPressed: () => Navigator.of(context).maybePop(),
+    );
+  }
+}
+
+/// Outlined rounded button, e.g. a recent search.
+class OutlinePill extends StatelessWidget {
+  const OutlinePill({
+    required this.label,
+    required this.onPressed,
+    this.leading,
+    this.fontSize = 12,
+    this.height = 30,
+    super.key,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final Widget? leading;
+  final double fontSize;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.ink,
+          side: const BorderSide(color: AppColors.divider),
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (leading case final icon?) ...<Widget>[
+              icon,
+              const SizedBox(width: 6),
+            ],
+            Text(label, style: TextStyle(fontSize: fontSize)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Centered message with an optional retry button (errors, empty results).
 class MessageView extends StatelessWidget {
   const MessageView({

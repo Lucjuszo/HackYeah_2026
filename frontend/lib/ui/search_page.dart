@@ -28,6 +28,7 @@ class _SearchPageState extends State<SearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -56,6 +57,13 @@ class _SearchPageState extends State<SearchPage> {
                         icon: const Icon(Icons.close_rounded, color: AppColors.secondary),
                         onPressed: () => setState(_controller.clear),
                       ),
+                filled: true,
+                fillColor: AppColors.field,
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(28),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
             const SizedBox(height: 26),
