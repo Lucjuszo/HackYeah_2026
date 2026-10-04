@@ -1375,39 +1375,38 @@ class _MapHomePageState extends State<MapHomePage> {
                             fontSize: 12,
                           ),
                         ),
-                      _mapButtons(sheetTop + (selected != null ? 172 : 16)),
-                      if (selected != null)
-                        Positioned(
-                          left: 12,
-                          right: 12,
-                          bottom: sheetTop + 10,
-                          child: _PlacePreviewCard(
-                            place: selected,
-                            distanceM: _distanceTo(selected),
-                            travelTimes: switch ((
-                              widget.travelTimes,
-                              _location.point,
-                            )) {
-                              (final service?, final origin?) =>
-                                TravelTimesLine(
-                                  service: service,
-                                  from: origin,
-                                  to: selected.location,
-                                  fontSize: 11,
-                                ),
-                              _ => null,
-                            },
-                            onTap: () => _openDetails(selected),
-                            onClose: () => setState(() => _selectedId = null),
-                          ),
+                      ),
+                    ),
+                  ),
+                _mapButtons(sheetTop + (selected != null ? 172 : 16)),
+                if (selected != null)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: sheetTop + 10,
+                    child: _PlacePreviewCard(
+                      place: selected,
+                      distanceM: _distanceTo(selected),
+                      travelTimes: switch ((
+                        widget.travelTimes,
+                        _location.point,
+                      )) {
+                        (final service?, final origin?) => TravelTimesLine(
+                          service: service,
+                          from: origin,
+                          to: selected.location,
+                          fontSize: 11,
                         ),
-                      _spotSheet(),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+                        _ => null,
+                      },
+                      onTap: () => _openDetails(selected),
+                      onClose: () => setState(() => _selectedId = null),
+                    ),
+                  ),
+                _spotSheet(),
+              ],
+            );
+          },
         ),
       ),
     );
