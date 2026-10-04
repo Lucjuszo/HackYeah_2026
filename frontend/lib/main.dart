@@ -180,6 +180,9 @@ class _MapHomePageState extends State<MapHomePage> {
   void initState() {
     super.initState();
     widget.auth.restore();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(widget.locationService.requestPermission());
+    });
   }
 
   @override
@@ -927,9 +930,7 @@ class _MapHomePageState extends State<MapHomePage> {
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
                           Text(
-                            _radius.km == null
-                                ? 'Promień'
-                                : '${_radius.km} km',
+                            _radius.km == null ? 'Promień' : '${_radius.km} km',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -1093,11 +1094,7 @@ class _MapHomePageState extends State<MapHomePage> {
   }
 
   Widget _mapButtons(double bottom) {
-    Widget button(
-      IconData icon,
-      String tooltip,
-      VoidCallback onTap,
-    ) => Padding(
+    Widget button(IconData icon, String tooltip, VoidCallback onTap) => Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Material(
         color: Colors.white,

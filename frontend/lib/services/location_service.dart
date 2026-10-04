@@ -14,10 +14,29 @@ class LocationFailure implements Exception {
 /// Device position (browser geolocation on the web, Windows location service on desktop).
 abstract class LocationService {
   Future<LatLon> currentLocation();
+
+  /// Requests the platform permission without forcing a location lookup.
+  /// Test and non-platform implementations can keep the default no-op behavior.
+  Future<bool> requestPermission() async => true;
 }
 
 class GeolocatorLocationService implements LocationService {
   const GeolocatorLocationService();
+
+  @override
+  Future<bool> requestPermission() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return false;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      return permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+    } on Object {
+      return false;
+    }
+  }
 
   @override
   Future<LatLon> currentLocation() async {
@@ -27,12 +46,7 @@ class GeolocatorLocationService implements LocationService {
           'Usługi lokalizacji są wyłączone w systemie.',
         );
       }
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      if (!await requestPermission()) {
         throw const LocationFailure(
           'Brak zgody na lokalizację. Możesz wpisać miasto lub adres.',
         );
