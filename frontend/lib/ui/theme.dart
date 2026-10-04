@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color white = Colors(0xFFFCFBF8);
-  static const Color black = Colors(0xFF31250C);
+  static const Color white = Color(0xFFFCFBF8);
+  static const Color black = Color(0xFF31250C);
   static const Color transparent = Colors.transparent;
   static const Color ink = Color(0xFF31250C);
   static const Color primary = Color(0xFFFF8F57);
@@ -36,8 +36,8 @@ class AppColors {
   static const Color subtleShadow = Color(0x33000000);
   static const Color sheetShadow = Color(0x19000000);
   static const Color imageOverlay = Color(0x99000000);
-  static const Color white54 = Colors(0xFFFCFBF8);
-  static const Color white70 = Colors(0xFFFCFBF8);
+  static const Color white54 = Color(0xFFFCFBF8);
+  static const Color white70 = Color(0xFFFCFBF8);
   static const Color greyText = Color(0xFF625741);
 }
 
