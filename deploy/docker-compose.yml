@@ -9,10 +9,10 @@
 #   docker compose up -d
 #
 # Tunnel (Cloudflare Zero Trust -> Networks -> Tunnels -> Public hostnames):
-#   app.<domain>  ->  http://frontend:80
+#   <domain>      ->  http://frontend:80
 #   api.<domain>  ->  http://backend:8000
 
-name: focusmap
+name: thirdplaces
 
 # Docker's own copy of stdout/stderr: small, rotated, compressed (the files in `logs` are the main logs).
 x-logging: &logging
@@ -34,7 +34,7 @@ services:
     logging: *logging
 
   backend:
-    image: focusmap-backend:${TAG:-latest}
+    image: thirdplaces-backend:${TAG:-latest}
     restart: unless-stopped
     env_file: backend.env
     # Same server as the image's default; only the logging differs: warnings and errors, no line per
@@ -46,7 +46,7 @@ services:
       - --port=8000
       - --proxy-headers
       - --forwarded-allow-ips=*
-      - --log-config=/etc/focusmap/logging.json
+      - --log-config=/etc/thirdplaces/logging.json
       - --log-level=warning
       - --no-access-log
     read_only: true
@@ -55,7 +55,7 @@ services:
     volumes:
       - media:/app/media # photos (STORAGE_BACKEND=local)
       - logs:/logs
-      - ./backend-logging.json:/etc/focusmap/logging.json:ro
+      - ./backend-logging.json:/etc/thirdplaces/logging.json:ro
     depends_on:
       log-dirs:
         condition: service_completed_successfully
@@ -66,7 +66,7 @@ services:
     logging: *logging
 
   frontend:
-    image: focusmap-frontend:${TAG:-latest}
+    image: thirdplaces-frontend:${TAG:-latest}
     restart: unless-stopped
     read_only: true
     tmpfs:

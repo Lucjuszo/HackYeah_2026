@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Builds the production images for the Raspberry Pi (linux/arm64) on this PC and, optionally, ships them.
 #
-#   deploy/build.sh --api-url https://api.example.com                      # build + dist/focusmap-images.tar.gz
+#   deploy/build.sh --api-url https://api.example.com                      # build + dist/thirdplaces-images.tar.gz
 #   deploy/build.sh --api-url https://api.example.com --deploy pi@raspberrypi.local
-#       ...then copy the images and docker-compose.yml to the Pi (~/focusmap) and restart the stack
+#       ...then copy the images and docker-compose.yml to the Pi (~/thirdplaces) and restart the stack
 #
 # Options:
 #   --api-url URL     public backend address compiled into the Flutter app (or env API_URL) - required
-#   --deploy HOST     ssh target (user@host); --dir sets the directory there (default: focusmap)
+#   --deploy HOST     ssh target (user@host); --dir sets the directory there (default: thirdplaces)
 #   --tag TAG         image tag (default: latest)
 #   --platform P      default linux/arm64 (64-bit Raspberry Pi OS); linux/arm/v7 for a 32-bit OS
 #
@@ -23,7 +23,7 @@ API_URL="${API_URL:-}"
 PLATFORM="linux/arm64"
 TAG="latest"
 TARGET=""
-REMOTE_DIR="focusmap"
+REMOTE_DIR="thirdplaces"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -43,8 +43,8 @@ done
 case "$API_URL" in https://*|http://*) ;; *) die "API_URL must start with https:// or http://" ;; esac
 docker buildx version >/dev/null 2>&1 || die "docker buildx not found"
 
-BACKEND="focusmap-backend:$TAG"
-FRONTEND="focusmap-frontend:$TAG"
+BACKEND="thirdplaces-backend:$TAG"
+FRONTEND="thirdplaces-frontend:$TAG"
 
 echo "==> $BACKEND ($PLATFORM)"
 docker buildx build \
@@ -65,12 +65,12 @@ docker buildx build \
   "$ROOT/frontend"
 
 mkdir -p "$DIST"
-ARCHIVE="$DIST/focusmap-images.tar.gz"
+ARCHIVE="$DIST/thirdplaces-images.tar.gz"
 echo "==> $ARCHIVE"
 docker save "$BACKEND" "$FRONTEND" | gzip -1 > "$ARCHIVE"
 COMPOSE_FILES=(docker-compose.yml backend-logging.json backend.env.example cloudflared.env.example)
 for f in "${COMPOSE_FILES[@]}"; do cp "$DEPLOY_DIR/$f" "$DIST/"; done
-echo "    $(du -h "$ARCHIVE" | cut -f1); on the Pi: gunzip -c focusmap-images.tar.gz | docker load"
+echo "    $(du -h "$ARCHIVE" | cut -f1); on the Pi: gunzip -c thirdplaces-images.tar.gz | docker load"
 
 if [ -z "$TARGET" ]; then
   echo "Done. Copy dist/ to the Pi, or run again with --deploy user@host."
