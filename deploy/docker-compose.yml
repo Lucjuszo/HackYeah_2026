@@ -1,0 +1,111 @@
+# Production on the Raspberry Pi 4B (4 GB, 64-bit OS): backend + frontend + Cloudflare tunnel.
+# MongoDB is Atlas; nothing listens on the Pi's ports, traffic comes only through the tunnel.
+# Volumes: `media` = uploaded photos, `logs` = log files (backend/, nginx/, cloudflared/).
+#
+# Images are built on the PC by deploy/build.sh (no building here). On the Pi, in this directory:
+#   backend.env      <- backend.env.example     (Atlas, OAuth, JWT...)
+#   cloudflared.env  <- cloudflared.env.example (TUNNEL_TOKEN)
+#   backend-logging.json                        (copied by build.sh --deploy)
+#   docker compose up -d
+#
+# Tunnel (Cloudflare Zero Trust -> Networks -> Tunnels -> Public hostnames):
+#   app.<domain>  ->  http://frontend:80
+#   api.<domain>  ->  http://backend:8000
+
+name: focusmap
+
+# Docker's own copy of stdout/stderr: small, rotated, compressed (the files in `logs` are the main logs).
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "2m"
+    max-file: "2"
+
+services:
+  # One-off: log directories owned by the users the services run as (backend 10001, cloudflared nonroot 65532).
+  log-dirs:
+    image: busybox:1.37
+    command: >
+      sh -c "mkdir -p /logs/backend /logs/nginx /logs/cloudflared
+      && chown 10001:10001 /logs/backend && chown 65532:65532 /logs/cloudflared"
+    volumes:
+      - logs:/logs
+    restart: "no"
+    logging: *logging
+
+  backend:
+    image: focusmap-backend:${TAG:-latest}
+    restart: unless-stopped
+    env_file: backend.env
+    # Same server as the image's default; only the logging differs: warnings and errors, no line per
+    # request, into /logs/backend/backend.log (rotated 4 x 2 MB) and stderr.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+      - --log-config=/etc/focusmap/logging.json
+      - --log-level=warning
+      - --no-access-log
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - media:/app/media # photos (STORAGE_BACKEND=local)
+      - logs:/logs
+      - ./backend-logging.json:/etc/focusmap/logging.json:ro
+    depends_on:
+      log-dirs:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging: *logging
+
+  frontend:
+    image: focusmap-frontend:${TAG:-latest}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    volumes:
+      - logs:/logs # error log: /logs/nginx/error.log
+    depends_on:
+      log-dirs:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    logging: *logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    env_file: cloudflared.env
+    command: >
+      tunnel --no-autoupdate --loglevel warn --transport-loglevel warn
+      --logfile /logs/cloudflared/cloudflared.log run
+    volumes:
+      - logs:/logs
+    depends_on:
+      log-dirs:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    logging: *logging
+
+volumes:
+  media:
+  logs:
