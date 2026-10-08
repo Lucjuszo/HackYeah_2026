@@ -2212,7 +2212,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{ \"text\": \"Świetne miejsce do nauki, gniazdka przy każdym stoliku. W weekendy bywa tłoczno.\" }",
+              "raw": "{ \"text\": \"Świetne miejsce do nauki, gniazdka przy każdym stoliku. W weekendy bywa tłoczno.\", \"score\": 5 }",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2532,7 +2532,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{ \"text\": \"anonim\" }",
+              "raw": "{ \"text\": \"anonim\", \"score\": 3 }",
               "options": {
                 "raw": {
                   "language": "json"

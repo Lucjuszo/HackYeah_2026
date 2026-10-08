@@ -76,7 +76,7 @@ async def seed(db: AsyncDatabase) -> tuple[int, list[Place]]:
         for user, score, text in REVIEWS.get(path.name, []):
             await ratings.set_rating(db, place_id, user, score, is_mock=True)
             if text:
-                await comments.create_comment(db, place_id, user, text, user_name=user, is_mock=True)
+                await comments.create_comment(db, place_id, user, text, score=score, user_name=user, is_mock=True)
         seeded.append(await places.get_place(db, place.id))
     return removed, seeded
 

@@ -8,7 +8,7 @@ CommentText = Annotated[str, StringConstraints(strip_whitespace=True, min_length
 
 class CommentCreate(BaseModel):
     text: CommentText
-    score: int | None = Field(None, ge=1, le=5, description="Optional rating attached to the opinion")
+    score: int = Field(ge=1, le=5, description="Stars of the opinion: required, an opinion always has them")
 
 
 class CommentUpdate(BaseModel):
@@ -21,7 +21,7 @@ class Comment(BaseModel):
     user_id: str
     user_name: str | None = Field(None, description="Author's display name at the time of writing")
     text: str
-    score: int | None = Field(None, ge=1, le=5, description="Rating attached to the opinion, when provided")
+    score: int = Field(ge=1, le=5, description="Stars given with the opinion")
     user_score: int | None = Field(
         None, ge=1, le=5, description="The author's current rating of the place (follows later changes)"
     )

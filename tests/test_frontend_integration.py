@@ -115,20 +115,20 @@ class TestRateLimits:
     def test_comments(self, client, created_place, monkeypatch):
         monkeypatch.setattr(settings, "comments_per_hour", 1)
         url = f"/places/{created_place['id']}/comments"
-        assert client.post(url, json={"text": "one"}).status_code == 201
-        assert client.post(url, json={"text": "two"}).status_code == 429
+        assert client.post(url, json={"text": "one", "score": 4}).status_code == 201
+        assert client.post(url, json={"text": "two", "score": 4}).status_code == 429
 
     def test_zero_disables(self, client, created_place, monkeypatch):
         monkeypatch.setattr(settings, "comments_per_hour", 0)
         url = f"/places/{created_place['id']}/comments"
         for i in range(5):
-            assert client.post(url, json={"text": f"c{i}"}).status_code == 201
+            assert client.post(url, json={"text": f"c{i}", "score": 4}).status_code == 201
 
 
 def test_comments_total_count(client, created_place):
     url = f"/places/{created_place['id']}/comments"
     for i in range(3):
-        client.post(url, json={"text": f"c{i}"})
+        client.post(url, json={"text": f"c{i}", "score": 4})
     response = client.get(url, params={"limit": 1})
     assert len(response.json()) == 1
     assert response.headers["X-Total-Count"] == "3"

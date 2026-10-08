@@ -56,7 +56,7 @@ Konfiguracja klienta Google (Cloud Console, redirect URI `http://localhost:8000/
   własne). Potem `POST /places` i od razu szczegóły nowego miejsca.
 - **Ocena** (szczegóły → karta „Twoja opinia”, gwiazdki): `GET/PUT/DELETE /places/{id}/ratings/me`; PUT zwraca nowe
   podsumowanie (`summary`), które front od razu pokazuje.
-- **Opinie**: `POST /places/{id}/comments` (komentarz w tej samej karcie, wymaga gwiazdek; wysyła też `score`),
+- **Opinie**: `POST /places/{id}/comments` (komentarz w tej samej karcie; `score` 1–5 jest **obowiązkowy**, bez niego `422`),
   `PATCH` / `DELETE .../comments/{id}` z menu ⋮ przy własnych opiniach (admin: przy wszystkich). Każda opinia ma
   `user_score` – aktualną ocenę miejsca wystawioną przez autora (zmienia się razem z oceną).
 - **Łapki w górę**: `PUT` / `DELETE /places/{id}/comments/{id}/like` (jedna na użytkownika, bez łapek w dół).

@@ -49,7 +49,7 @@ def test_seeds_examples_marked_as_mock(db, client):
 def test_rerun_replaces_mock_data_and_keeps_real_data(db, client, minimal_payload):
     real = client.post("/places", json=minimal_payload).json()
     client.put(f"/places/{real['id']}/ratings/me", json={"score": 3})
-    client.post(f"/places/{real['id']}/comments", json={"text": "prawdziwy"})
+    client.post(f"/places/{real['id']}/comments", json={"text": "prawdziwy", "score": 4})
 
     first_ids = {p.id for p in run_seed()[1]}
     removed, seeded = run_seed()
@@ -68,7 +68,7 @@ def test_rerun_replaces_mock_data_and_keeps_real_data(db, client, minimal_payloa
 def test_mock_comments_on_mock_place_by_real_user_are_removed(db, client):
     _, seeded = run_seed()
     place_id = seeded[0].id
-    client.post(f"/places/{place_id}/comments", json={"text": "real user on mock place"})
+    client.post(f"/places/{place_id}/comments", json={"text": "real user on mock place", "score": 4})
 
     run_seed()
     assert db.comments.count_documents({"is_mock": False}) == 0

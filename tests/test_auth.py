@@ -189,7 +189,7 @@ class TestCallback:
         assert user["role"] == "user"
 
     def test_admin_token_can_moderate(self, client, created_place, fake_provider):
-        comment = client.post(f"/places/{created_place['id']}/comments", json={"text": "x"}).json()
+        comment = client.post(f"/places/{created_place['id']}/comments", json={"text": "x", "score": 4}).json()
         fake_provider["identity"] = identity(email="boss@example.com")
         token = callback(client).json()["access_token"]
         response = client.delete(f"/places/{created_place['id']}/comments/{comment['id']}", headers=bearer(token))
