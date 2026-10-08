@@ -1,0 +1,10 @@
+# Every 5 minutes (a run still in progress is never started twice). Enable: thirdplaces-update@<user>.timer
+[Unit]
+Description=thirdplaces: check main every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

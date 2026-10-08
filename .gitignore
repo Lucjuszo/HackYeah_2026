@@ -6,3 +6,8 @@ __pycache__/
 media/
 .coverage
 .pytest_cache/
+
+# Production deploy: real secrets and built image archives
+deploy/backend.env
+deploy/cloudflared.env
+dist/

@@ -1,0 +1,12 @@
+# Context = frontend/: leave out local builds and tool caches (Flutter recreates them in the image).
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.idea/
+*.iml
+android/
+ios/
+linux/
+macos/
+windows/
