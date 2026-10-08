@@ -1,0 +1,13 @@
+# deploy/update.sh as the Pi user given after "@" (in the docker group), repo in /home/<user>/thirdplaces.
+# Started by thirdplaces-update@.timer; install: docs/DEPLOY.md.
+[Unit]
+Description=thirdplaces: follow main and update the containers
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=%i
+ExecStart=/bin/bash /home/%i/thirdplaces/deploy/update.sh
+TimeoutStartSec=15min
+Nice=10

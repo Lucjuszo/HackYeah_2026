@@ -1,11 +1,13 @@
-# Production on the Raspberry Pi 4B (4 GB, 64-bit OS): backend + frontend + Cloudflare tunnel.
+# Production on the Raspberry Pi 3B+ (1 GB, 64-bit OS): backend + frontend + Cloudflare tunnel.
 # MongoDB is Atlas; nothing listens on the Pi's ports, traffic comes only through the tunnel.
 # Volumes: `media` = uploaded photos, `logs` = log files (backend/, nginx/, cloudflared/).
 #
-# Images are built on the PC by deploy/build.sh (no building here). On the Pi, in this directory:
+# Images are built by GitHub Actions from main (.github/workflows/deploy.yml) and pushed to GHCR; the Pi only
+# pulls and runs them. This directory is a sparse checkout of the repo on the Pi; update.sh (systemd timer,
+# every 5 min) follows main: git reset + docker compose pull/up. In this directory (docs/DEPLOY.md):
 #   backend.env      <- backend.env.example     (Atlas, OAuth, JWT...)
 #   cloudflared.env  <- cloudflared.env.example (TUNNEL_TOKEN)
-#   backend-logging.json                        (copied by build.sh --deploy)
+#   .env             optional: TAG=sha-abc1234 pins a version (default: latest)
 #   docker compose up -d
 #
 # Tunnel (Cloudflare Zero Trust -> Networks -> Tunnels -> Public hostnames):
@@ -34,7 +36,7 @@ services:
     logging: *logging
 
   backend:
-    image: thirdplaces-backend:${TAG:-latest}
+    image: ghcr.io/lucjuszo/thirdplaces-backend:${TAG:-latest}
     restart: unless-stopped
     env_file: backend.env
     # Same server as the image's default; only the logging differs: warnings and errors, no line per
@@ -66,7 +68,7 @@ services:
     logging: *logging
 
   frontend:
-    image: thirdplaces-frontend:${TAG:-latest}
+    image: ghcr.io/lucjuszo/thirdplaces-frontend:${TAG:-latest}
     restart: unless-stopped
     read_only: true
     tmpfs:

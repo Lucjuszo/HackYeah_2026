@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# FastAPI backend for the Raspberry Pi (linux/arm64). Built by deploy/build.sh; context = repo root.
+# FastAPI backend for the Raspberry Pi (linux/arm64). Built by .github/workflows/deploy.yml; context = repo root.
 
 FROM python:3.13-slim AS build
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1

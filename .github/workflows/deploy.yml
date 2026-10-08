@@ -1,0 +1,112 @@
+name: Deploy images
+
+# Production images for the Raspberry Pi (linux/arm64), pushed to GHCR. deploy/update.sh on the Pi
+# (systemd timer, every 5 min) pulls :latest and recreates the containers whose image changed.
+# Only main, and only after the Tests workflow passed for that commit.
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; a newer one waits instead of cancelling a half-pushed pair of images.
+concurrency:
+  group: deploy-images
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  # Public backend address compiled into the Flutter app (repo variable API_URL overrides it).
+  API_URL: ${{ vars.API_URL || 'https://api.thirdplaces.pl' }}
+
+jobs:
+  backend:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    # Native arm64 runner: pip installs real arm64 wheels, no QEMU.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Image name
+        id: img
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/thirdplaces-backend" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/backend.Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.img.outputs.name }}:latest
+            ${{ steps.img.outputs.name }}:sha-${{ steps.img.outputs.short }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          # No attestations and no per-build labels: an unchanged image keeps its digest,
+          # so the Pi restarts only what really changed.
+          provenance: false
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+  frontend:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    # Flutter builds natively on amd64 (BUILDPLATFORM); the arm64 nginx stage only copies files.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Image name
+        id: img
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/thirdplaces-frontend" >> "$GITHUB_OUTPUT"
+          echo "short=${SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: deploy/frontend.Dockerfile
+          build-contexts: deploy=deploy
+          build-args: API_URL=${{ env.API_URL }}
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.img.outputs.name }}:latest
+            ${{ steps.img.outputs.name }}:sha-${{ steps.img.outputs.short }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: false
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend

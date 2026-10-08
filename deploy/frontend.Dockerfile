@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# Flutter web served by nginx. Built by deploy/build.sh; context = frontend/, extra context "deploy" = deploy/.
+# Flutter web served by nginx. Built by .github/workflows/deploy.yml; context = frontend/, extra context "deploy" = deploy/.
 #
-# The Flutter stage runs on the build machine's own platform (BUILDPLATFORM, e.g. the amd64 PC):
+# The Flutter stage runs on the build machine's own platform (BUILDPLATFORM, the amd64 runner):
 # its output is plain HTML/JS, the same for every CPU. Only the small nginx stage is linux/arm64,
 # so the Raspberry Pi gets nginx + the built files and never the Flutter SDK.
 
