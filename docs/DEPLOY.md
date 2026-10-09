@@ -94,3 +94,15 @@ docker compose restart backend   # po zmianie backend.env
 docker compose exec backend tail -f /logs/backend/backend.log
 docker run --rm -v thirdplaces_media:/media -v "$PWD":/backup busybox tar czf /backup/media.tgz -C /media .   # kopia zdjęć
 ```
+
+### Healthcheck z zewnątrz
+
+`https://<domena>/_fm/s7k2q-hc` (ukryty, nigdzie nielinkowany) – JSON frontend → API → baza, bez cache:
+
+| Kod | Treść |
+|---|---|
+| 200 | `{"status":"ok","checked_at":…,"api":{"status":"ok","uptime_s":…},"database":{"status":"ok","latency_ms":…}}` |
+| 503 | `"status":"degraded"`, `"database":{"status":"unreachable"}` – API działa, baza nie |
+| 503 | `{"status":"down","api":{"status":"unreachable"},…}` – nginx nie dosięga backendu |
+
+Ścieżka jest w `deploy/nginx.conf`, dane daje `GET /health/details` backendu.

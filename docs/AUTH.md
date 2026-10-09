@@ -26,8 +26,10 @@ przeglądarka ──► GET /auth/github/login ──► GitHub (zgoda) ──�
 
 | Akcja | Kto |
 |---|---|
-| odczyt czegokolwiek | każdy, bez logowania |
-| dodanie miejsca, edycja miejsca | każdy zalogowany; `updated_by` = ostatni edytujący |
+| odczyt czegokolwiek | każdy, bez logowania (oprócz miejsc czekających na akceptację) |
+| dodanie miejsca | każdy zalogowany; miejsce od nie-admina czeka na akceptację (`approved: false`), widzi je tylko autor i admini |
+| edycja miejsca | każdy zalogowany; `updated_by` = ostatni edytujący |
+| **akceptacja / ukrycie / odrzucenie miejsca** | **admin** (`/admin/places`, `DELETE /places/{id}`) |
 | ocena | zalogowany, swoja (jedna na miejsce) |
 | dodanie komentarza | zalogowany; autor = on |
 | **edycja / usunięcie komentarza** | **autor albo admin** (inni: 403) |

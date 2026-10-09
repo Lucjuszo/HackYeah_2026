@@ -218,12 +218,19 @@ class Place(PlaceCreate):
         [],
         description="Fields holding made-up demo values (e.g. 'menu', 'amenities.wifi'); the rest is real data",
     )
+    approved: bool = Field(True, description="Visible to everyone; False = waiting for an admin's approval")
+    approved_by: str | None = None
+    approved_at: datetime | None = None
     created_by: str | None = None
     updated_by: str | None = None
     created_at: datetime
     updated_at: datetime
     distance_m: float | None = Field(None, description="Distance from the searched point; only in searches by lat/lon")
     price_range: PriceRange | None = Field(None, description="Parsed `usage_price`; None if missing or free text")
+
+
+class PlaceApproval(BaseModel):
+    approved: bool
 
 
 class PlaceSummary(BaseModel):

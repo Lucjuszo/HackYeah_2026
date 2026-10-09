@@ -12,6 +12,7 @@ import 'auth/auth.dart';
 import 'services/location_service.dart';
 import 'services/travel_time_service.dart';
 import 'ui/add_place_page.dart';
+import 'ui/admin_page.dart';
 import 'ui/format.dart' as fmt;
 import 'ui/location_picker_page.dart';
 import 'ui/place_details_page.dart';
@@ -51,6 +52,7 @@ class MiejscowkiApp extends StatelessWidget {
 
   /// Where the main map's tiles come from; null = tile.openstreetmap.org (tests use fake images).
   final TileProvider? tileProvider;
+
   /// Walk / bike / car times to a place; null hides them (tests: no network).
   final TravelTimeService? travelTimes;
 
@@ -186,10 +188,14 @@ class _MapHomePageState extends State<MapHomePage> {
   /// The user moved the map or picked a place: a late GPS fix must not move the camera.
   bool _userMovedMap = false;
 
+  /// Logged-in admins get the "Panel admina" button.
+  bool _isAdmin = false;
+
   @override
   void initState() {
     super.initState();
     widget.auth.restore();
+    _refreshUser();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(widget.locationService.requestPermission());
     });
@@ -361,6 +367,26 @@ class _MapHomePageState extends State<MapHomePage> {
     _reload();
   }
 
+  /// Who is logged in may change on any page that asks for a login.
+  Future<void> _refreshUser() async {
+    final user = await widget.auth.currentUser();
+    if (mounted && (user?.isAdmin ?? false) != _isAdmin) {
+      setState(() => _isAdmin = user?.isAdmin ?? false);
+    }
+  }
+
+  Future<void> _openAdmin() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AdminPage(api: widget.api, auth: widget.auth),
+      ),
+    );
+    // Approved places show up on the map.
+    if (!mounted) return;
+    _refreshUser();
+    _reload();
+  }
+
   // --- distances, navigation
 
   /// From the chosen location if there is one, else what the backend measured (map centre).
@@ -389,7 +415,9 @@ class _MapHomePageState extends State<MapHomePage> {
       ),
     );
     // Ratings may have changed there.
-    if (mounted) _reload();
+    if (!mounted) return;
+    _refreshUser();
+    _reload();
   }
 
   LocationChoice _deviceChoice(LatLon point) =>
@@ -551,8 +579,20 @@ class _MapHomePageState extends State<MapHomePage> {
         ),
       ),
     );
-    if (added == null || !mounted) return;
+    if (!mounted) return;
+    _refreshUser();
+    if (added == null) return;
     final place = added.place;
+    if (!place.approved) {
+      // Not on the map until an admin approves it.
+      _toast(
+        [
+          'Dzięki! „${place.name}” pojawi się na mapie po akceptacji administratora.',
+          ?added.photoError,
+        ].join(' '),
+      );
+      return;
+    }
     _toast(
       added.photoError == null
           ? 'Dodano: ${place.name}'
@@ -1344,6 +1384,19 @@ class _MapHomePageState extends State<MapHomePage> {
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
+                          if (_isAdmin) ...<Widget>[
+                            const SizedBox(width: 8),
+                            OutlinePill(
+                              key: const ValueKey<String>('open-admin'),
+                              label: 'Panel admina',
+                              height: 28,
+                              leading: const Icon(
+                                Icons.admin_panel_settings_outlined,
+                                size: 15,
+                              ),
+                              onPressed: _openAdmin,
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 7),

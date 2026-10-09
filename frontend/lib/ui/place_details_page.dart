@@ -274,7 +274,10 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   Future<void> _loadPlace() async {
     setState(() => _error = null);
     try {
-      final place = await widget.api.getPlace(widget.summary.id);
+      final place = await widget.api.getPlace(
+        widget.summary.id,
+        token: widget.auth.token,
+      );
       if (mounted) setState(() => _place = place);
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);

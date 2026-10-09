@@ -881,5 +881,119 @@ void main() {
         closeTo(54.352, 0.001),
       );
     });
+
+    displayTest('miejsce od użytkownika czeka na akceptację admina', (
+      tester,
+    ) async {
+      final backend = FakeBackend()..requireApproval = true;
+      await pumpApp(tester, backend: backend, auth: TestAuth(loggedIn: true));
+      await openForm(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('new-place-name')),
+        'Ukryta Kawiarnia',
+      );
+      await submit(tester);
+
+      expect(backend.created, hasLength(1));
+      expect(text('po akceptacji administratora'), findsOneWidget);
+      // Stays on the map, no details of a place nobody else can see yet.
+      expect(find.byType(PlaceDetailsPage), findsNothing);
+      expect(backend.places.map((p) => p['name']), isNot(contains('Ukryta Kawiarnia')));
+    });
+  });
+
+  group('panel admina', () {
+    FakeBackend adminBackend() => FakeBackend()
+      ..me = const {'id': 'boss', 'name': 'Szef', 'role': 'admin'}
+      ..pending = [
+        {...placeJson('n1', 'Nowa Czytelnia'), 'approved': false},
+        {...placeJson('n2', 'Spam'), 'approved': false},
+      ];
+
+    Future<void> openPanel(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey<String>('open-admin')));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, 'Panel admina'), findsOneWidget);
+    }
+
+    displayTest('zwykły użytkownik nie widzi panelu', (tester) async {
+      await pumpApp(tester, auth: TestAuth(loggedIn: true));
+      expect(find.byKey(const ValueKey<String>('open-admin')), findsNothing);
+    });
+
+    displayTest('niezalogowany nie widzi panelu', (tester) async {
+      await pumpApp(tester, backend: adminBackend());
+      expect(find.byKey(const ValueKey<String>('open-admin')), findsNothing);
+    });
+
+    displayTest('admin akceptuje miejsce i pojawia się ono na mapie', (
+      tester,
+    ) async {
+      final backend = await pumpApp(
+        tester,
+        backend: adminBackend(),
+        auth: TestAuth(loggedIn: true),
+      );
+      await openPanel(tester);
+      expect(find.text('Nowa Czytelnia'), findsOneWidget);
+      expect(find.text('Spam'), findsOneWidget);
+      expect(find.text('Oczekujące (2)'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey<String>('admin-approve-n1')));
+      await tester.pumpAndSettle();
+      expect(backend.approvals, [('n1', true)]);
+      expect(find.text('Nowa Czytelnia'), findsNothing);
+      expect(find.text('Oczekujące (1)'), findsOneWidget);
+
+      final searchesBefore = backend.searches.length;
+      await tester.tap(find.byKey(const ValueKey<String>('back')));
+      await tester.pumpAndSettle();
+      expect(backend.searches.length, greaterThan(searchesBefore));
+      expect(
+        find.byKey(const ValueKey<String>('marker-n1')),
+        findsOneWidget,
+      );
+    });
+
+    displayTest('odrzucenie pyta o potwierdzenie i usuwa miejsce', (
+      tester,
+    ) async {
+      final backend = await pumpApp(
+        tester,
+        backend: adminBackend(),
+        auth: TestAuth(loggedIn: true),
+      );
+      await openPanel(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('admin-reject-n2')));
+      await tester.pumpAndSettle();
+      expect(text('Tego nie da się cofnąć'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('admin-reject-confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(backend.deletedPlaces, ['n2']);
+      expect(find.text('Spam'), findsNothing);
+    });
+
+    displayTest('zaakceptowane miejsce można ukryć', (tester) async {
+      final backend = await pumpApp(
+        tester,
+        backend: adminBackend(),
+        auth: TestAuth(loggedIn: true),
+      );
+      await openPanel(tester);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('admin-tab-approved')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Kawiarnia Pod Kodem'), findsOneWidget);
+      expect(find.text('Nowa Czytelnia'), findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey<String>('admin-hide-p1')));
+      await tester.pumpAndSettle();
+      expect(backend.approvals, [('p1', false)]);
+      expect(find.text('Kawiarnia Pod Kodem'), findsNothing);
+      expect(find.text('Oczekujące (3)'), findsOneWidget);
+    });
   });
 }

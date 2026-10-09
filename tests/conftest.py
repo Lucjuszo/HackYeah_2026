@@ -22,6 +22,8 @@ os.environ["GOOGLE_CLIENT_ID"] = "test-google-client"
 os.environ["GOOGLE_CLIENT_SECRET"] = "test-google-secret"
 os.environ["ADMIN_EMAILS"] = "boss@example.com"
 os.environ["AUTH_DEV_LOGIN"] = "false"
+# Places are public right after POST, so most tests don't need an admin; test_admin.py switches approval on.
+os.environ["PLACES_REQUIRE_APPROVAL"] = "false"
 os.environ.pop("AUTH_REDIRECT_URL", None)
 # Photos on the local temp disk, never in a real Cloudinary account.
 for _var in ("STORAGE_BACKEND", "CLOUDINARY_URL", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"):
