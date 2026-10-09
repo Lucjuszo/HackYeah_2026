@@ -17,7 +17,9 @@ cp .env.example .env                      # i uzupełnij dane do bazy
 fastapi dev app/main.py                   # http://127.0.0.1:8000/docs
 ```
 
-Healthcheck: `GET /health`. Konfiguracja w `.env` (patrz `.env.example`).
+Healthcheck: `GET /health` (szczegóły: `GET /health/details`). Na produkcji z domeny frontu: `/_fm/s7k2q-hc`
+– JSON z połączeniem front → API → baza, opis w [`docs/DEPLOY.md`](docs/DEPLOY.md#healthcheck-z-zewnątrz).
+Konfiguracja w `.env` (patrz `.env.example`).
 
 ### Baza danych
 

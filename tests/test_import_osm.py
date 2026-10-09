@@ -85,7 +85,7 @@ def test_reviews_are_mock_and_summaries_match(db):
 def test_deterministic(db):
     _, first = run_import(count=6)
     _, second = run_import(count=6)
-    strip = lambda p: p.model_dump(exclude={"id", "created_at", "updated_at"})  # noqa: E731
+    strip = lambda p: p.model_dump(exclude={"id", "created_at", "updated_at", "approved_at"})  # noqa: E731
     assert [strip(p) for p in first] == [strip(p) for p in second]
 
 

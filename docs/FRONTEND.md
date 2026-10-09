@@ -71,6 +71,12 @@ Konfiguracja klienta Google (Cloud Console, redirect URI `http://localhost:8000/
 | `GET /places/{id}` | strona miejsca |
 | `POST /places`, `PATCH /places/{id}` | dodanie / edycja (zalogowany) |
 | `DELETE /places/{id}` | tylko admin; usuwa też oceny, komentarze i zdjęcia |
+| `GET /admin/places?approved=false` | tylko admin; miejsca czekające na akceptację (`true` = publiczne), najnowsze pierwsze, `q`, `limit`, `skip`, `X-Total-Count` |
+| `PUT /admin/places/{id}/approval` | tylko admin; `{"approved": true}` publikuje, `false` ukrywa z powrotem |
+
+Nowe miejsce od zwykłego użytkownika ma `approved: false`: nie ma go w wyszukiwaniach, a `GET /places/{id}`
+zwraca je tylko autorowi i adminom (z tokenem), innym 404. Miejsca admina są publiczne od razu.
+Wyłączenie akceptacji: `PLACES_REQUIRE_APPROVAL=false`.
 
 Parametry wyszukiwania (te same dla `/places` i `/places/summary`):
 

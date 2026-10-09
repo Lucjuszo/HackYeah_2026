@@ -94,16 +94,23 @@ class PlacesApi {
 
   static const Duration timeout = Duration(seconds: 15);
 
+  /// [token] is optional here: public endpoints show a logged-in user a bit more (their own pending place).
   Future<(Object?, http.Response)> _get(
     String path, [
     Map<String, String>? query,
+    String? token,
   ]) async {
     final uri = apiUrl
         .resolve(path)
         .replace(queryParameters: query?.isEmpty ?? true ? null : query);
     final http.Response response;
     try {
-      response = await _client.get(uri).timeout(timeout);
+      response = await _client
+          .get(
+            uri,
+            headers: token == null ? null : {'Authorization': 'Bearer $token'},
+          )
+          .timeout(timeout);
     } on Exception {
       throw const ApiException(
         'Brak połączenia z serwerem. Sprawdź, czy backend działa.',
@@ -206,8 +213,13 @@ class PlacesApi {
     return Page(items, _total(response, items.length));
   }
 
-  Future<Place> getPlace(String id) async {
-    final (body, _) = await _get('places/${Uri.encodeComponent(id)}');
+  /// A place waiting for approval needs the [token] of its author or an admin.
+  Future<Place> getPlace(String id, {String? token}) async {
+    final (body, _) = await _get(
+      'places/${Uri.encodeComponent(id)}',
+      null,
+      token,
+    );
     return Place.fromJson(body! as Json, apiUrl: apiUrl);
   }
 
@@ -416,6 +428,47 @@ class PlacesApi {
       '${_placePath(placeId)}/photos/${Uri.encodeComponent(photoId)}',
       token: token,
     );
+  }
+
+  /// Admin only. GET /admin/places: waiting for approval ([approved] false) or public, newest first.
+  Future<Page<Place>> adminPlaces({
+    required bool approved,
+    required String token,
+    String? text,
+    int limit = 50,
+    int skip = 0,
+  }) async {
+    final (body, response) = await _get('admin/places', {
+      'approved': '$approved',
+      if (text?.trim() case final t? when t.isNotEmpty) 'q': t,
+      'limit': '$limit',
+      'skip': '$skip',
+    }, token);
+    final items = [
+      for (final json in body! as List)
+        Place.fromJson(json as Json, apiUrl: apiUrl),
+    ];
+    return Page(items, _total(response, items.length));
+  }
+
+  /// Admin only: publishes ([approved] true) or hides a place again.
+  Future<Place> setApproval(
+    String placeId, {
+    required bool approved,
+    required String token,
+  }) async {
+    final body = await _send(
+      'PUT',
+      'admin/${_placePath(placeId)}/approval',
+      token: token,
+      body: {'approved': approved},
+    );
+    return Place.fromJson(body! as Json, apiUrl: apiUrl);
+  }
+
+  /// Admin only. Also removes its photos, ratings and comments.
+  Future<void> deletePlace(String placeId, {required String token}) async {
+    await _send('DELETE', _placePath(placeId), token: token);
   }
 
   Future<List<GeocodeResult>> geocode(String text) async {

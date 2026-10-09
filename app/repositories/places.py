@@ -53,7 +53,12 @@ def _menu(menu: list[MenuItem]) -> list[dict[str, Any]]:
 
 
 def to_document(
-    place: PlaceCreate, user_id: str, *, is_mock: bool = False, mock_fields: Sequence[str] = ()
+    place: PlaceCreate,
+    user_id: str,
+    *,
+    is_mock: bool = False,
+    mock_fields: Sequence[str] = (),
+    approved: bool = True,
 ) -> dict[str, Any]:
     now = utcnow()
     doc: dict[str, Any] = {
@@ -66,6 +71,9 @@ def to_document(
         "rating": {"average": None, "count": 0},
         "is_mock": is_mock,
         "mock_fields": list(mock_fields),
+        "approved": approved,
+        "approved_by": user_id if approved else None,
+        "approved_at": now if approved else None,
         "created_by": user_id,
         "updated_by": user_id,
         "created_at": now,
@@ -130,6 +138,9 @@ def from_document(doc: dict[str, Any]) -> Place:
         rating=doc.get("rating", {}),
         is_mock=doc.get("is_mock", False),
         mock_fields=doc.get("mock_fields", []),
+        approved=doc.get("approved", True),
+        approved_by=doc.get("approved_by"),
+        approved_at=doc.get("approved_at"),
         created_by=doc.get("created_by"),
         updated_by=doc.get("updated_by"),
         created_at=doc["created_at"],
@@ -178,7 +189,9 @@ async def ensure_indexes(db: AsyncDatabase) -> None:
         partialFilterExpression={"osm.id": {"$exists": True}},
     )
     await places.create_index([("price_range.min", 1), ("price_range.max", 1)])
+    await places.create_index([("approved", 1), ("_id", -1)])
     await backfill_price_ranges(db)
+    await backfill_approved(db)
 
 
 async def backfill_price_ranges(db: AsyncDatabase) -> int:
@@ -192,14 +205,26 @@ async def backfill_price_ranges(db: AsyncDatabase) -> int:
     return updated
 
 
+async def backfill_approved(db: AsyncDatabase) -> int:
+    """Places stored before approvals existed were public, so they stay approved. Idempotent."""
+    result = await db[COLLECTION].update_many({"approved": {"$exists": False}}, {"$set": {"approved": True}})
+    return result.modified_count
+
+
 async def place_exists(db: AsyncDatabase, place_id: ObjectId) -> bool:
     return await db[COLLECTION].count_documents({"_id": place_id}, limit=1) > 0
 
 
 async def create_place(
-    db: AsyncDatabase, place: PlaceCreate, user_id: str, *, is_mock: bool = False, mock_fields: Sequence[str] = ()
+    db: AsyncDatabase,
+    place: PlaceCreate,
+    user_id: str,
+    *,
+    is_mock: bool = False,
+    mock_fields: Sequence[str] = (),
+    approved: bool = True,
 ) -> Place:
-    doc = to_document(place, user_id, is_mock=is_mock, mock_fields=mock_fields)
+    doc = to_document(place, user_id, is_mock=is_mock, mock_fields=mock_fields, approved=approved)
     try:
         result = await db[COLLECTION].insert_one(doc)
     except DuplicateKeyError as e:
@@ -227,6 +252,22 @@ async def get_place(db: AsyncDatabase, place_id: str) -> Place | None:
     if oid is None:
         return None
     doc = await db[COLLECTION].find_one({"_id": oid})
+    return from_document(doc) if doc else None
+
+
+async def set_approval(db: AsyncDatabase, place_id: str, approved: bool, user_id: str) -> Place | None:
+    """Publishes (or hides again) a place; None if it doesn't exist."""
+    oid = parse_object_id(place_id)
+    if oid is None:
+        return None
+    to_set = {
+        "approved": approved,
+        "approved_by": user_id if approved else None,
+        "approved_at": utcnow() if approved else None,
+    }
+    doc = await db[COLLECTION].find_one_and_update(
+        {"_id": oid}, {"$set": to_set}, return_document=ReturnDocument.AFTER
+    )
     return from_document(doc) if doc else None
 
 
@@ -259,11 +300,14 @@ class PlaceFilter:
     min_price: int | None = None  # price_range.min >= (PLN)
     max_price: int | None = None  # price_range.max <= (PLN); open-ended "60+" never matches
     open_at: datetime | None = None  # local time of the places; None = don't filter by opening hours
+    approved: bool | None = True  # public searches see approved places only; None = all (admin)
 
 
 def _match(f: PlaceFilter) -> dict[str, Any]:
     """Everything except the distance condition (that one differs between $geoNear and count)."""
     query: dict[str, Any] = {}
+    if f.approved is not None:
+        query["approved"] = f.approved
     if f.q:
         pattern = {"$regex": re.escape(f.q.strip()), "$options": "i"}
         query["$or"] = [{"name": pattern}, {"address.street": pattern}]

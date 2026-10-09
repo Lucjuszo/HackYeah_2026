@@ -2,7 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.auth import CurrentUser
+from app.auth import CurrentUser, OptionalUser
+from app.config import settings
 from app.db import local_now
 from app.models.place import (
     Atmosphere,
@@ -107,8 +108,10 @@ async def _search(db: Db, f: repo.PlaceFilter, sort: PlaceSort | None, limit: in
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_place(place: PlaceCreate, db: Db, user: CurrentUser) -> Place:
+    """Places added by regular users wait for an admin's approval (`approved: false`) before they show up."""
+    approved = user.is_admin or not settings.places_require_approval
     try:
-        return await repo.create_place(db, place, user.id)
+        return await repo.create_place(db, place, user.id, approved=approved)
     except repo.PlaceAlreadyExists:
         raise _osm_conflict(place.osm)
 
@@ -143,8 +146,11 @@ async def list_place_summaries(
 
 
 @router.get("/{place_id}")
-async def get_place(place_id: str, db: Db) -> Place:
+async def get_place(place_id: str, db: Db, user: OptionalUser) -> Place:
+    """A place waiting for approval is visible only to its author and admins (404 for everyone else)."""
     place = await repo.get_place(db, place_id)
+    if place is not None and not place.approved and not (user and (user.is_admin or user.id == place.created_by)):
+        place = None
     if place is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Place not found")
     return place

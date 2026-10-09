@@ -100,6 +100,33 @@ class TestHealth:
         assert response.status_code == 503
         assert response.json() == {"status": "degraded", "mongo": "unreachable"}
 
+    def test_details_ok(self, client):
+        response = client.get("/health/details")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ok"
+        assert body["api"]["status"] == "ok"
+        assert body["api"]["uptime_s"] >= 0
+        assert body["database"]["status"] == "ok"
+        assert body["database"]["latency_ms"] >= 0
+        assert body["checked_at"]
+
+    def test_details_database_down_is_503(self, client, monkeypatch):
+        class DownDb:
+            async def command(self, *args, **kwargs):
+                raise ServerSelectionTimeoutError("no servers")
+
+        monkeypatch.setattr(app.main, "get_db", lambda: DownDb())
+        response = client.get("/health/details")
+        assert response.status_code == 503
+        body = response.json()
+        assert body["status"] == "degraded"
+        assert body["api"]["status"] == "ok"
+        assert body["database"] == {"status": "unreachable", "latency_ms": None}
+
+    def test_details_hidden_from_docs(self, client):
+        assert "/health/details" not in client.get("/openapi.json").json()["paths"]
+
 
 class TestRateLimits:
     def test_photo_uploads(self, client, created_place, monkeypatch):

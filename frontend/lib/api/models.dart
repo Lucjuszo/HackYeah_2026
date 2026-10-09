@@ -336,6 +336,8 @@ class Place {
     this.photos = const [],
     this.isMock = false,
     this.mockFields = const [],
+    this.approved = true,
+    this.createdAt,
   });
 
   factory Place.fromJson(Json json, {required Uri apiUrl}) => Place(
@@ -364,6 +366,8 @@ class Place {
     mockFields: [
       for (final f in (json['mock_fields'] as List? ?? const [])) f as String,
     ],
+    approved: (json['approved'] as bool?) ?? true,
+    createdAt: _date(json['created_at']),
   );
 
   final String id;
@@ -381,6 +385,10 @@ class Place {
   final List<Photo> photos;
   final bool isMock;
   final List<String> mockFields;
+
+  /// False = added by a user and waiting for an admin; hidden from everyone else.
+  final bool approved;
+  final DateTime? createdAt;
 }
 
 class Comment {

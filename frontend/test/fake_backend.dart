@@ -126,7 +126,21 @@ class FakeBackend {
 
   /// The only token the logged-in endpoints accept.
   String validToken = FakeOAuthLauncher.token;
-  static const Json me = {'id': 'me', 'name': 'Ja Testowy', 'role': 'user'};
+  Json me = const {'id': 'me', 'name': 'Ja Testowy', 'role': 'user'};
+
+  bool get isAdmin => me['role'] == 'admin';
+
+  /// Like PLACES_REQUIRE_APPROVAL on the backend: places added by non-admins go to [pending].
+  bool requireApproval = false;
+
+  /// Full places waiting for an admin (GET /admin/places), newest first.
+  List<Json> pending = [];
+
+  /// (place id, approved) of every PUT /admin/places/{id}/approval.
+  final List<(String, bool)> approvals = [];
+
+  /// Ids of every DELETE /places/{id}.
+  final List<String> deletedPlaces = [];
   List<String> providers = ['github', 'google'];
 
   /// place id -> the logged-in user's score.
@@ -179,6 +193,11 @@ class FakeBackend {
       final data = body();
       created.add(data);
       final id = 'new${created.length}';
+      if (requireApproval && !isAdmin) {
+        final place = {...placeJson(id, data['name'] as String), 'approved': false};
+        pending = [place, ...pending];
+        return _json(place, status: 201);
+      }
       places = [
         ...places,
         summaryJson(
@@ -219,6 +238,35 @@ class FakeBackend {
       return _json(visible, headers: {'x-total-count': '${visible.length}'});
     }
     if (uri.path == '/geocode') return _json(geocodeResults);
+
+    if (path.isNotEmpty && path[0] == 'admin') {
+      if (!loggedIn) return _error(401, 'Not authenticated');
+      if (!isAdmin) return _error(403, 'Admins only');
+      if (uri.path == '/admin/places' && method == 'GET') {
+        final approved = uri.queryParameters['approved'] == 'true';
+        final list = approved
+            ? [for (final p in places.reversed) {...placeJson(p['id'] as String, p['name'] as String), 'approved': true}]
+            : pending;
+        return _json(list, headers: {'x-total-count': '${list.length}'});
+      }
+      if (path.length == 4 && path[3] == 'approval' && method == 'PUT') {
+        final approved = body()['approved'] as bool;
+        approvals.add((path[2], approved));
+        if (approved) {
+          final i = pending.indexWhere((p) => p['id'] == path[2]);
+          if (i < 0) return _error(404, 'Place not found');
+          final place = pending.removeAt(i);
+          places = [...places, summaryJson(place['id'] as String, place['name'] as String)];
+          return _json({...place, 'approved': true});
+        }
+        final summary = places.firstWhere((p) => p['id'] == path[2], orElse: () => {});
+        if (summary.isEmpty) return _error(404, 'Place not found');
+        places = places.where((p) => p['id'] != path[2]).toList();
+        final place = {...placeJson(path[2], summary['name'] as String), 'approved': false};
+        pending = [place, ...pending];
+        return _json(place);
+      }
+    }
 
     // /places/{id}/ratings/me
     if (path.length == 4 && path[0] == 'places' && path[2] == 'ratings' && path[3] == 'me') {
@@ -309,6 +357,14 @@ class FakeBackend {
       }
     }
 
+    if (path.length == 2 && path[0] == 'places' && method == 'DELETE') {
+      if (!loggedIn) return _error(401, 'Not authenticated');
+      if (!isAdmin) return _error(403, 'Only an admin can delete places');
+      deletedPlaces.add(path[1]);
+      pending = pending.where((p) => p['id'] != path[1]).toList();
+      places = places.where((p) => p['id'] != path[1]).toList();
+      return http.Response('', 204);
+    }
     if (path.length == 2 && path[0] == 'places') {
       final summary = places.firstWhere((p) => p['id'] == path[1], orElse: () => {});
       if (summary.isEmpty) return _error(404, 'Place not found');
