@@ -4,7 +4,28 @@ import 'package:flutter_svg/flutter_svg.dart';
 import '../auth/auth.dart';
 import 'theme.dart';
 
-/// Opens the GitHub login page when an action needs an authenticated user.
+/// Login buttons in display order: (provider, label, logo, tint the logo with the text colour).
+const List<(String, String, String, bool)> _loginOptions = [
+  ('github', 'Połącz z GitHub', 'assets/logo_github.svg', true),
+  (
+    'google',
+    'Połącz z Google',
+    'assets/images/google-icon-logo-svgrepo-com.svg',
+    false,
+  ),
+];
+
+/// Providers to show for what the backend reports: known ones in display order. GitHub alone
+/// until the list arrives, or when it can't be loaded or holds nothing we know.
+List<String> visibleProviders(List<String>? configured) {
+  final known = [
+    for (final (provider, _, _, _) in _loginOptions)
+      if (configured?.contains(provider) ?? false) provider,
+  ];
+  return known.isEmpty ? const ['github'] : known;
+}
+
+/// Opens the login page (GitHub / Google) when an action needs an authenticated user.
 ///
 /// A successful OAuth flow returns the access token through the page route. Closing the
 /// page with the back arrow returns null and leaves the original action untouched.
@@ -32,18 +53,32 @@ class _LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<_LoginPage> {
-  bool _busy = false;
+  List<String> _providers = visibleProviders(null);
+  String? _pending;
   String? _error;
 
-  void _login() {
+  @override
+  void initState() {
+    super.initState();
+    widget.auth.providers().then(
+      (List<String> configured) {
+        if (mounted) setState(() => _providers = visibleProviders(configured));
+      },
+      onError: (Object _) {
+        // Backend unreachable: keep the GitHub button, the login itself will report the error.
+      },
+    );
+  }
+
+  void _login(String provider) {
     setState(() {
-      _busy = true;
+      _pending = provider;
       _error = null;
     });
     final auth = widget.auth;
     // Keep login directly inside the button callback so browser OAuth popups are allowed.
     auth
-        .login('github')
+        .login(provider)
         .then(
           (String token) {
             if (mounted) Navigator.of(context).pop(token);
@@ -51,13 +86,47 @@ class _LoginPageState extends State<_LoginPage> {
           onError: (Object error) {
             if (!mounted) return;
             setState(() {
-              _busy = false;
+              _pending = null;
               _error = error is LoginException
                   ? error.message
                   : 'Logowanie nie powiodło się. Spróbuj ponownie.';
             });
           },
         );
+  }
+
+  Widget _button(String provider, String label, String logo, bool tinted) {
+    return SizedBox(
+      width: 240,
+      child: OutlinedButton.icon(
+        key: ValueKey<String>('login-$provider'),
+        onPressed: _pending == null ? () => _login(provider) : null,
+        icon: _pending == provider
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.ink,
+                ),
+              )
+            : SvgPicture.asset(
+                logo,
+                width: 17,
+                height: 17,
+                colorFilter: tinted
+                    ? ColorFilter.mode(AppColors.ink, BlendMode.srcIn)
+                    : null,
+              ),
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.ink,
+          side: BorderSide(color: AppColors.ink.withValues(alpha: 0.45)),
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        ),
+      ),
+    );
   }
 
   @override
@@ -91,37 +160,12 @@ class _LoginPageState extends State<_LoginPage> {
                   fit: BoxFit.contain,
                 ),
                 const SizedBox(height: 34),
-                OutlinedButton.icon(
-                  key: const ValueKey<String>('login-github'),
-                  onPressed: _busy ? null : _login,
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.ink,
-                          ),
-                        )
-                      : SvgPicture.asset(
-                        'assets/logo_github.svg',
-                        width: 17,
-                        height: 17,
-                        colorFilter: ColorFilter.mode(AppColors.ink, BlendMode.srcIn),
-                      ),
-                  label: const Text('Połącz z GitHub'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.ink,
-                    side: BorderSide(
-                      color: AppColors.ink.withValues(alpha: 0.45),
+                for (final (provider, label, logo, tinted) in _loginOptions)
+                  if (_providers.contains(provider))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _button(provider, label, logo, tinted),
                     ),
-                    shape: const StadiumBorder(),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                  ),
-                ),
                 if (_error != null) ...<Widget>[
                   const SizedBox(height: 14),
                   Text(

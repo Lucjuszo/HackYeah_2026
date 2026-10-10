@@ -478,12 +478,61 @@ void main() {
       await openLoginByRating(tester);
 
       expect(find.text('Połącz z GitHub'), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('login-google')), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey<String>('login-github')));
       await tester.pumpAndSettle();
       expect(auth.launcher.logins.single.path, '/auth/github/login');
       expect(auth.store.token?.accessToken, FakeOAuthLauncher.token);
+    });
+
+    displayTest('użytkownik loguje się przez Google', (tester) async {
+      final auth = TestAuth();
+      final backend = await pumpApp(tester, auth: auth);
+      await openLoginByRating(tester);
+
+      expect(find.text('Połącz z Google'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey<String>('login-google')));
+      await tester.pumpAndSettle();
+
+      expect(auth.launcher.logins.single.toString(), 'http://api.test/auth/google/login');
+      expect(auth.store.token?.accessToken, FakeOAuthLauncher.token);
+      expect(find.text('Połącz z Google'), findsNothing); // back on the place
+      expect(backend.myRatings['p1'], 4); // the rating that asked to log in is saved
+    });
+
+    displayTest('GitHub nad Google, w tej kolejności', (tester) async {
+      await pumpApp(tester, backend: FakeBackend()..providers = ['google', 'github']);
+      await openLoginByRating(tester);
+      final github = tester.getTopLeft(find.byKey(const ValueKey<String>('login-github')));
+      final google = tester.getTopLeft(find.byKey(const ValueKey<String>('login-google')));
+      expect(github.dy, lessThan(google.dy));
+    });
+
+    displayTest('bez Google na backendzie nie ma przycisku Google', (tester) async {
+      await pumpApp(tester, backend: FakeBackend()..providers = ['github']);
+      await openLoginByRating(tester);
+      expect(find.byKey(const ValueKey<String>('login-github')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('login-google')), findsNothing);
+    });
+
+    displayTest('tylko Google na backendzie: jedyny przycisk to Google', (tester) async {
+      await pumpApp(tester, backend: FakeBackend()..providers = ['google']);
+      await openLoginByRating(tester);
+      expect(find.byKey(const ValueKey<String>('login-google')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('login-github')), findsNothing);
+    });
+
+    displayTest('nieudane logowanie Google pokazuje błąd i oba przyciski', (tester) async {
+      final auth = TestAuth(failure: const LoginException('Logowanie anulowane.'));
+      final backend = await pumpApp(tester, auth: auth);
+      await openLoginByRating(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('login-google')));
+      await tester.pumpAndSettle();
+      expect(find.text('Logowanie anulowane.'), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('login-github')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('login-google')), findsOneWidget);
+      expect(auth.store.token, isNull);
+      expect(backend.myRatings, isEmpty);
     });
 
     displayTest('anulowane logowanie zostaje na stronie z komunikatem', (

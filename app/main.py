@@ -15,7 +15,7 @@ from app.repositories import places as places_repo
 from app.repositories import ratings as ratings_repo
 from app.repositories import users as users_repo
 from app.geocoding import geocoder
-from app.routers import admin, auth, comments, geocode, media, photos, places, ratings
+from app.routers import admin, auth, comments, geocode, media, photos, places, privacy, ratings
 
 
 @asynccontextmanager
@@ -63,6 +63,7 @@ app.include_router(comments.router)
 app.include_router(media.router)
 app.include_router(geocode.router)
 app.include_router(admin.router)
+app.include_router(privacy.router)
 
 
 @app.get("/health")

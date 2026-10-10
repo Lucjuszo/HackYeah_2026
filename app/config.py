@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     admin_emails: str = ""
     # POST /auth/dev-login hands out tokens for any user/role without OAuth. Never enable in production.
     auth_dev_login: bool = False
+    # Contact shown on the privacy policy page (GET /privacy); unset: the project's GitHub issues.
+    privacy_contact_email: str | None = None
     # New places added by regular users stay hidden until an admin approves them (admins' own are approved at once).
     places_require_approval: bool = True
 
