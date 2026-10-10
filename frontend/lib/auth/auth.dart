@@ -67,7 +67,7 @@ class MemoryTokenStore implements TokenStore {
   Future<void> clear() async => token = null;
 }
 
-/// Login state: our GitHub access token via the backend, kept between app starts,
+/// Login state: our access token from the backend (GitHub or Google login), kept between app starts,
 /// and who is logged in.
 class AuthController {
   AuthController({
@@ -111,7 +111,7 @@ class AuthController {
         throw e;
       });
 
-  /// Logs in with the GitHub [provider]; throws [LoginException].
+  /// Logs in with [provider] (`github`, `google`); throws [LoginException].
   ///
   /// Call it straight from a tap handler, before any other `await`: on the web the login opens a
   /// popup, which browsers allow only as a direct reaction to a click.

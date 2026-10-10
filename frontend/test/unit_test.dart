@@ -2,11 +2,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:miejscowki_map/api/models.dart';
 import 'package:miejscowki_map/api/places_api.dart';
 import 'package:miejscowki_map/ui/format.dart' as fmt;
+import 'package:miejscowki_map/ui/login_sheet.dart';
 
 import 'fake_backend.dart';
 
 void main() {
   final apiUrl = Uri.parse('http://api.test/');
+
+  group('dostawcy logowania', () {
+    test('znani dostawcy w stałej kolejności', () {
+      expect(visibleProviders(['google', 'github']), ['github', 'google']);
+      expect(visibleProviders(['google']), ['google']);
+    });
+
+    test('nieznani są pomijani', () {
+      expect(visibleProviders(['facebook', 'google']), ['google']);
+    });
+
+    test('bez listy albo pustej: sam GitHub', () {
+      expect(visibleProviders(null), ['github']);
+      expect(visibleProviders([]), ['github']);
+      expect(visibleProviders(['facebook']), ['github']);
+    });
+  });
 
   group('format', () {
     test('odmiana liczebników', () {

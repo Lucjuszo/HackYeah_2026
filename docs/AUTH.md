@@ -77,20 +77,42 @@ AUTH_DEV_LOGIN=true         # tylko lokalnie! patrz niżej
    OAUTH_CALLBACK_BASE_URL=http://192.168.1.20:8000
    ```
 
-### 2. Google (ok. 5 min)
+### 2. Google (ok. 5 min) – dla wszystkich, bez weryfikacji przez Google
+
+Aplikacja prosi Google tylko o **niewrażliwe** zakresy `email` i `profile`
+(`GOOGLE_SCOPES` w `app/auth/oauth.py`). Dzięki temu można ją od razu opublikować
+dla każdego konta Google: **bez weryfikacji aplikacji**, bez limitu 100 użytkowników
+i bez ekranu „Google nie zweryfikował tej aplikacji”.
 
 1. https://console.cloud.google.com → wybierz / utwórz projekt.
-2. **APIs & Services → OAuth consent screen** (Google Auth Platform → Branding/Audience):
-   typ **External**, nazwa aplikacji, Twój e-mail. Dopóki aplikacja jest w trybie *Testing*,
-   zalogować mogą się tylko **Test users** – dodaj tam swój adres (i adresy kolegów).
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
+2. **Google Auth Platform → Branding**: nazwa aplikacji, e-mail wsparcia, e-mail dewelopera.
+   - **Nie wgrywaj logo** – logo wymaga weryfikacji marki i do czasu jej zakończenia
+     blokuje publikację. (Logo można dodać później, gdy będzie czas na weryfikację.)
+   - *Authorized domains*: domena frontu/API, np. `thirdplaces.pl`.
+   - *Privacy policy link*: `https://api.thirdplaces.pl/privacy` (strona z `app/routers/privacy.py`;
+     kontakt na niej ustawia `PRIVACY_CONTACT_EMAIL`).
+3. **Audience**: typ **External** → **Publish app** (status *In production*).
+   W trybie *Testing* zalogować mogą się tylko dodani *Test users* (max 100).
+   Przy samych zakresach `email`/`profile` Google nie wymaga weryfikacji – publikacja jest natychmiastowa.
+4. **Data Access**: nie dodawaj żadnych zakresów (albo tylko `.../auth/userinfo.email`,
+   `.../auth/userinfo.profile`, `openid`). Każdy zakres wrażliwy (Drive, Gmail, Calendar…)
+   oznacza obowiązkową weryfikację. Test `tests/test_auth_google.py` pilnuje, żeby kod
+   nie poprosił o nic więcej.
+5. **Clients → Create client**
    - *Application type*: **Web application**
    - *Authorized redirect URIs*: **`http://localhost:8000/auth/google/callback`**
-4. Skopiuj *Client ID* i *Client secret* do `.env`:
+     oraz produkcyjny `https://api.<domena>/auth/google/callback`
+     (Google nie przyjmuje adresów IP z sieci LAN – na telefonie loguj się przez GitHub
+     albo przez domenę/tunel z HTTPS).
+6. Skopiuj *Client ID* i *Client secret* do `.env`:
    ```dotenv
    GOOGLE_CLIENT_ID=...apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=...
    ```
+
+Przy logowaniu Google pokazuje wybór konta (`prompt=select_account`). Użytkownik jest
+rozpoznawany po `sub` (stałe id konta Google), nie po e-mailu; e-mail zapisujemy tylko,
+gdy Google potwierdzi go jako zweryfikowany (tylko taki może dać rolę admina z `ADMIN_EMAILS`).
 
 Provider jest włączony, gdy ma ustawione oba pola – można mieć tylko jednego.
 
@@ -144,4 +166,4 @@ Wydaje token dla dowolnej nazwy i roli – idealne do Postmana i testowania upra
 - `AUTH_DEV_LOGIN=false`.
 - HTTPS; u providerów callbacki z produkcyjną domeną (`https://api.twoja-domena/auth/github/callback`).
 - Za reverse proxy uruchamiać uvicorn z `--proxy-headers`, żeby callback URL miał `https://`.
-- Google: przełączyć consent screen z *Testing* na *In production*.
+- Google: *Audience* → **In production** (bez logo i bez dodatkowych zakresów nie wymaga weryfikacji).

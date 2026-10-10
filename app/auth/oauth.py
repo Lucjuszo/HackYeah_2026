@@ -24,6 +24,21 @@ if settings.github_client_id and settings.github_client_secret:
         client_kwargs={"scope": "read:user user:email"},
     )
 
+# Google: only non-sensitive scopes. With these the consent screen can be published "In production"
+# for every Google account without Google's app verification (sensitive/restricted scopes would
+# require it, and until then the app shows the "unverified app" warning and caps users at 100).
+# Don't add scopes here without going through verification first (docs/AUTH.md).
+GOOGLE_SCOPES = ("email", "profile")
+GOOGLE_NON_SENSITIVE_SCOPES = frozenset(
+    {
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    }
+)
+
 if settings.google_client_id and settings.google_client_secret:
     # Plain OAuth with the userinfo endpoint (no "openid" scope / ID token to validate): the profile
     # comes straight from Google over TLS with the access token we just exchanged.
@@ -34,7 +49,9 @@ if settings.google_client_id and settings.google_client_secret:
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
         access_token_url="https://oauth2.googleapis.com/token",
         api_base_url="https://www.googleapis.com/",
-        client_kwargs={"scope": "email profile"},
+        client_kwargs={"scope": " ".join(GOOGLE_SCOPES)},
+        # Let people with several Google accounts pick one instead of silently using the last one.
+        authorize_params={"prompt": "select_account"},
     )
 
 
@@ -46,6 +63,11 @@ class OAuthIdentity:
     email: str | None
     email_verified: bool
     avatar_url: str | None
+
+
+def _is_true(value: object) -> bool:
+    """Google sends a JSON boolean, older endpoints the string "true"; bool("false") would be True."""
+    return value is True or (isinstance(value, str) and value.lower() == "true")
 
 
 def configured_providers() -> list[str]:
@@ -80,6 +102,6 @@ async def fetch_identity(provider: str, request: Request) -> OAuthIdentity:
         subject=info["sub"],
         name=info.get("name") or info.get("email") or info["sub"],
         email=info.get("email"),
-        email_verified=bool(info.get("email_verified")),
+        email_verified=_is_true(info.get("email_verified")),
         avatar_url=info.get("picture"),
     )
