@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:url_launcher/url_launcher.dart';
 
@@ -12,19 +13,23 @@ class _LoopbackLauncher implements OAuthLauncher {
   @override
   Future<LoginResult> login(Uri loginUrl) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final returnTo = 'http://127.0.0.1:${server.port}/callback';
+    // Unguessable paths: another page or program on this machine can't hand the app a token of its own.
+    final nonce = _nonce();
+    final callbackPath = '/$nonce/callback';
+    final donePath = '/$nonce/done';
+    final returnTo = 'http://127.0.0.1:${server.port}$callbackPath';
     final completer = Completer<LoginResult>();
 
     server.listen((HttpRequest request) async {
       final response = request.response..headers.contentType = ContentType.html;
-      if (request.uri.path == '/callback') {
+      if (request.uri.path == callbackPath) {
         response.write(
           _page(
             'Logowanie…',
-            '<script>location.replace("/done?" + location.hash.slice(1));</script>',
+            '<script>location.replace("$donePath?" + location.hash.slice(1));</script>',
           ),
         );
-      } else if (request.uri.path == '/done') {
+      } else if (request.uri.path == donePath) {
         try {
           final result = parseLoginParams(request.uri.queryParameters);
           response.write(
@@ -65,6 +70,13 @@ class _LoopbackLauncher implements OAuthLauncher {
     } finally {
       await server.close(force: true);
     }
+  }
+
+  static String _nonce() {
+    final random = Random.secure();
+    return [
+      for (var i = 0; i < 16; i++) random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ].join();
   }
 
   static String _page(String title, String body) =>

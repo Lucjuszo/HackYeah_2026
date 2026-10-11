@@ -6,7 +6,7 @@ from app.auth import AdminUser
 from app.models.place import Place, PlaceApproval, PlaceSort
 from app.repositories import places as repo
 from app.routers.deps import Db
-from app.routers.places import TOTAL_HEADER
+from app.routers.places import MAX_SKIP, TOTAL_HEADER
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -19,7 +19,7 @@ async def list_places_for_review(
     approved: Annotated[bool, Query(description="false = waiting for approval, true = public")] = False,
     q: Annotated[str | None, Query(min_length=1, max_length=100, description="Part of the name or street")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    skip: Annotated[int, Query(ge=0)] = 0,
+    skip: Annotated[int, Query(ge=0, le=MAX_SKIP)] = 0,
 ) -> list[Place]:
     """Admin only. Newest first; total in the `X-Total-Count` header."""
     f = repo.PlaceFilter(approved=approved, q=q)

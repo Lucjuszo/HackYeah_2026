@@ -1,4 +1,4 @@
-"""Per-user limits for write-heavy endpoints (photo uploads, comments).
+"""Per-user limits for write-heavy endpoints (photo uploads, comments, places). Admins are never limited.
 
 In memory and per process: enough for one API instance; behind several workers each counts on its own.
 """
@@ -9,6 +9,8 @@ from collections.abc import Callable
 
 from fastapi import HTTPException, status
 
+from app.models.user import AuthUser
+
 WINDOW_S = 3600
 
 
@@ -18,13 +20,13 @@ class RateLimiter:
         self._per_hour = per_hour  # read on every call, so settings changes (and tests) apply immediately
         self._hits: dict[str, deque[float]] = defaultdict(deque)
 
-    def check(self, user_id: str) -> None:
-        """Counts one action of the user or raises 429 with Retry-After."""
+    def check(self, user: AuthUser) -> None:
+        """Counts one action of the user or raises 429 with Retry-After; admins pass without counting."""
         limit = self._per_hour()
-        if limit <= 0:
+        if limit <= 0 or user.is_admin:
             return
         now = time.monotonic()
-        hits = self._hits[user_id]
+        hits = self._hits[user.id]
         while hits and hits[0] <= now - WINDOW_S:
             hits.popleft()
         if len(hits) >= limit:

@@ -4,4 +4,5 @@ from pydantic import StringConstraints
 
 CountryCode = Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, pattern=r"^[A-Za-z]{2}$")]
 CurrencyCode = Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, pattern=r"^[A-Za-z]{3}$")]
-NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+# 300: above OSM's 255-character tag limit, so imported names and addresses always fit.
+NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]

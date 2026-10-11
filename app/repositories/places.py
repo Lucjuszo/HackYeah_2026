@@ -25,6 +25,7 @@ from app.models.place import (
     PlaceUpdate,
     parse_usage_price,
 )
+from app.models.user import AuthUser
 from app.storage import get_storage
 
 COLLECTION = "places"
@@ -213,6 +214,16 @@ async def backfill_approved(db: AsyncDatabase) -> int:
 
 async def place_exists(db: AsyncDatabase, place_id: ObjectId) -> bool:
     return await db[COLLECTION].count_documents({"_id": place_id}, limit=1) > 0
+
+
+async def place_visible(db: AsyncDatabase, place_id: ObjectId, user: AuthUser | None) -> bool:
+    """Exists and the caller may see it: approved, or waiting for approval and the caller is its author or an admin."""
+    doc = await db[COLLECTION].find_one({"_id": place_id}, projection={"approved": 1, "created_by": 1})
+    if doc is None:
+        return False
+    if doc.get("approved", True):
+        return True
+    return user is not None and (user.is_admin or user.id == doc.get("created_by"))
 
 
 async def create_place(

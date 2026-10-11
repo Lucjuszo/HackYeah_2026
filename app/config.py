@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # --- Rate limits per user (in memory, per process; 0 = off)
     photo_uploads_per_hour: int = 30
     comments_per_hour: int = 60
+    places_per_hour: int = 20
+    place_edits_per_hour: int = 120
+    # Largest request body the API accepts (JSON etc.); photo uploads get MAX_PHOTO_BYTES plus room for the
+    # multipart envelope. Checked before the body is read, so oversized uploads never fill memory or /tmp.
+    max_request_bytes: int = 1024 * 1024
 
     # --- Auth (see docs/AUTH.md)
     # Signs our own access tokens. Without it a random per-process secret is used,

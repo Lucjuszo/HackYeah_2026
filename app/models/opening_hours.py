@@ -3,6 +3,7 @@ from datetime import datetime, time, timedelta
 from enum import IntEnum
 from typing import Annotated, Self
 
+from annotated_types import MaxLen
 from pydantic import BaseModel, StringConstraints, model_validator
 
 # "HH:MM", zero-padded, so times compare correctly as plain strings (also in Mongo queries).
@@ -58,7 +59,8 @@ def _at(day: datetime, hhmm: str) -> datetime:
 
 class OpeningHours(BaseModel):
     always_open: bool = False
-    periods: list[OpeningPeriod] = []
+    # A few openings a day is plenty; the cap keeps status_at (run for every place in a search) cheap.
+    periods: Annotated[list[OpeningPeriod], MaxLen(100)] = []
 
     @model_validator(mode="after")
     def _check(self) -> Self:

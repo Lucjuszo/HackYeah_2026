@@ -223,14 +223,17 @@ class PlacesApi {
     return Place.fromJson(body! as Json, apiUrl: apiUrl);
   }
 
+  /// Comments of a place waiting for approval need the [token] of its author or an admin.
   Future<Page<Comment>> getComments(
     String placeId, {
     int limit = 20,
     int skip = 0,
+    String? token,
   }) async {
     final (body, response) = await _get(
       'places/${Uri.encodeComponent(placeId)}/comments',
       {'limit': '$limit', 'skip': '$skip'},
+      token,
     );
     final items = [
       for (final json in body! as List) Comment.fromJson(json as Json),

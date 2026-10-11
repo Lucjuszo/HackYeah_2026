@@ -294,6 +294,7 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
         widget.summary.id,
         limit: _commentsPage,
         skip: _comments.length,
+        token: widget.auth.token,
       );
       if (!mounted) return;
       setState(() {
