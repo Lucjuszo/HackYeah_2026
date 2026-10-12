@@ -18,6 +18,9 @@ from app.config import settings
 MIN_INTERVAL_S = 1.0  # Nominatim usage policy
 CACHE_TTL_S = 24 * 3600
 CACHE_SIZE = 1000
+# Upstream requests go one per second, so a burst of distinct queries (anonymous endpoint) would queue
+# up for minutes. Beyond this many waiting requests new ones are refused at once (503) instead.
+MAX_WAITING = 20
 
 
 class GeocodingUnavailable(Exception):
@@ -79,6 +82,7 @@ class Geocoder:
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
         self._last_request = 0.0
+        self._waiting = 0
         self._cache: OrderedDict[tuple, tuple[float, object]] = OrderedDict()
 
     def _http(self) -> httpx.AsyncClient:
@@ -106,7 +110,14 @@ class Geocoder:
             self._cache.move_to_end(key)
             return hit[1]
 
-        async with self._lock:
+        if self._waiting >= MAX_WAITING:
+            raise GeocodingUnavailable("too many requests waiting")
+        self._waiting += 1
+        try:
+            await self._lock.acquire()
+        finally:
+            self._waiting -= 1
+        try:
             if (hit := self._cache.get(key)) and hit[0] > time.monotonic():  # filled while we waited
                 return hit[1]
             wait = self._last_request + MIN_INTERVAL_S - time.monotonic()
@@ -120,7 +131,12 @@ class Geocoder:
                 self._last_request = time.monotonic()
             if response.status_code != 200:
                 raise GeocodingUnavailable(f"Nominatim answered HTTP {response.status_code}")
-            result = parse(response.json())
+            try:
+                result = parse(response.json())
+            except (ValueError, KeyError, TypeError, AttributeError) as e:  # not the JSON we expect
+                raise GeocodingUnavailable(f"Unexpected answer from Nominatim: {e!r}") from e
+        finally:
+            self._lock.release()
 
         self._cache[key] = (time.monotonic() + CACHE_TTL_S, result)
         while len(self._cache) > CACHE_SIZE:

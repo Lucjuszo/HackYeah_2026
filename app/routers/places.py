@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.auth import CurrentUser, OptionalUser
 from app.config import settings
-from app.db import local_now
+from app.db import local_now, parse_object_id
 from app.models.place import (
     Atmosphere,
     Coordinates,
@@ -16,6 +16,7 @@ from app.models.place import (
     PlaceSummary,
     PlaceUpdate,
 )
+from app.ratelimit import RateLimiter
 from app.repositories import places as repo
 from app.routers.deps import Db
 from app.storage import get_storage
@@ -23,6 +24,12 @@ from app.storage import get_storage
 router = APIRouter(prefix="/places", tags=["places"])
 
 TOTAL_HEADER = "X-Total-Count"
+# Bounds for numbers that go into Mongo queries: larger ones don't fit BSON's int64 (a 500, not a 422).
+MAX_SKIP = 100_000
+MAX_PRICE = 1_000_000
+
+create_limiter = RateLimiter("new places", lambda: settings.places_per_hour)
+edit_limiter = RateLimiter("place edits", lambda: settings.place_edits_per_hour)
 
 
 def _osm_conflict(osm: OsmRef) -> HTTPException:
@@ -63,9 +70,9 @@ def place_filter(
     atmosphere: Atmosphere | None = None,
     category: PlaceCategory | None = None,
     min_rating: Annotated[float | None, Query(ge=1, le=5)] = None,
-    min_price: Annotated[int | None, Query(ge=0, description="PLN; price_range.min >= this")] = None,
+    min_price: Annotated[int | None, Query(ge=0, le=MAX_PRICE, description="PLN; price_range.min >= this")] = None,
     max_price: Annotated[
-        int | None, Query(ge=0, description="PLN; price_range.max <= this (0 = free places only)")
+        int | None, Query(ge=0, le=MAX_PRICE, description="PLN; price_range.max <= this (0 = free places only)")
     ] = None,
     open_now: Annotated[bool, Query(description="Only places open right now (unknown hours excluded)")] = False,
 ) -> repo.PlaceFilter:
@@ -109,6 +116,7 @@ async def _search(db: Db, f: repo.PlaceFilter, sort: PlaceSort | None, limit: in
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_place(place: PlaceCreate, db: Db, user: CurrentUser) -> Place:
     """Places added by regular users wait for an admin's approval (`approved: false`) before they show up."""
+    create_limiter.check(user)
     approved = user.is_admin or not settings.places_require_approval
     try:
         return await repo.create_place(db, place, user.id, approved=approved)
@@ -123,7 +131,7 @@ async def list_places(
     response: Response,
     sort: SortParam = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    skip: Annotated[int, Query(ge=0)] = 0,
+    skip: Annotated[int, Query(ge=0, le=MAX_SKIP)] = 0,
 ) -> list[Place]:
     """Full places. Total number of matches (for pagination) in the `X-Total-Count` header."""
     docs = await _search(db, f, sort, limit, skip, response)
@@ -137,7 +145,7 @@ async def list_place_summaries(
     response: Response,
     sort: SortParam = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 200,
-    skip: Annotated[int, Query(ge=0)] = 0,
+    skip: Annotated[int, Query(ge=0, le=MAX_SKIP)] = 0,
 ) -> list[PlaceSummary]:
     """Same search as GET /places, light records for map pins and list cards (+ `open_now`, thumbnail)."""
     docs = await _search(db, f, sort, limit, skip, response)
@@ -158,7 +166,12 @@ async def get_place(place_id: str, db: Db, user: OptionalUser) -> Place:
 
 @router.patch("/{place_id}")
 async def update_place(place_id: str, update: PlaceUpdate, db: Db, user: CurrentUser) -> Place:
-    """Any logged-in user can edit a place; the last editor is recorded in `updated_by`."""
+    """Any logged-in user can edit a public place; the last editor is recorded in `updated_by`.
+    A place waiting for approval can be edited only by its author and admins (404 for everyone else)."""
+    oid = parse_object_id(place_id)
+    if oid is None or not await repo.place_visible(db, oid, user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Place not found")
+    edit_limiter.check(user)
     try:
         place = await repo.update_place(db, place_id, update, user.id)
     except repo.PlaceAlreadyExists:

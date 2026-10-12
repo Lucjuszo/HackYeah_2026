@@ -20,7 +20,7 @@ class OsmRef(BaseModel):
     """Link to an OSM element. OSM ids are unique only within a type, so both fields are needed."""
 
     type: OsmType
-    id: int = Field(gt=0)
+    id: int = Field(gt=0, le=2**53)  # OSM ids are far below; anything over int64 would break the DB write
 
     @property
     def url(self) -> str:
@@ -87,10 +87,13 @@ Features = Annotated[list[Feature], AfterValidator(_dedupe_case_insensitive), Ma
 class MenuItem(BaseModel):
     name: NonEmptyStr
     category: NonEmptyStr | None = None
-    description: str | None = None
+    description: Annotated[str, StringConstraints(max_length=1000)] | None = None
     # Integer minor units (grosze) – avoids float rounding and Decimal128 conversion in Mongo.
-    price: int = Field(ge=0, description="Price in minor units, e.g. 1500 = 15.00 PLN")
+    price: int = Field(ge=0, le=100_000_000, description="Price in minor units, e.g. 1500 = 15.00 PLN")
     currency: CurrencyCode = "PLN"
+
+
+Menu = Annotated[list[MenuItem], MaxLen(200)]
 
 
 class PriceRange(BaseModel):
@@ -101,6 +104,7 @@ class PriceRange(BaseModel):
 
 
 _PRICE = re.compile(r"^(\d+)\s*(?:(?:-|–)\s*(\d+)|(\+))?\s*(?:zł|zl|pln)?$", re.IGNORECASE)
+MAX_USAGE_PRICE = 1_000_000
 _FREE = {"free", "0", "bezpłatne", "bezplatne", "darmowe", "za darmo"}
 
 
@@ -115,9 +119,11 @@ def parse_usage_price(text: str | None) -> PriceRange | None:
     if match is None:
         return None
     low = int(match[1])
+    high = int(match[2]) if match[2] else low
+    if max(low, high) > MAX_USAGE_PRICE:  # not a real price (and wouldn't fit the DB's int64): free text
+        return None
     if match[3]:
         return PriceRange(min=low, max=None)
-    high = int(match[2]) if match[2] else low
     return PriceRange(min=min(low, high), max=max(low, high))
 
 
@@ -136,7 +142,7 @@ class PlaceCreate(BaseModel):
     atmosphere: Atmosphere | None = None
     category: PlaceCategory | None = None
     features: Features = Field([], description="User-defined extras shown on the place card, e.g. 'Pokoje wygłuszane'")
-    menu: list[MenuItem] = []
+    menu: Menu = []
     osm: OsmRef | None = None
 
 
@@ -158,7 +164,7 @@ class PlaceUpdate(BaseModel):
     atmosphere: Atmosphere | None = None
     category: PlaceCategory | None = None
     features: Features | None = None
-    menu: list[MenuItem] | None = None
+    menu: Menu | None = None
     osm: OsmRef | None = None
 
     @model_validator(mode="after")

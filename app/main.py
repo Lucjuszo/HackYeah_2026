@@ -15,6 +15,7 @@ from app.repositories import places as places_repo
 from app.repositories import ratings as ratings_repo
 from app.repositories import users as users_repo
 from app.geocoding import geocoder
+from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import admin, auth, comments, geocode, media, photos, places, privacy, ratings
 
 
@@ -54,7 +55,18 @@ app.add_middleware(
 )
 # Only used during OAuth login, to keep the anti-CSRF `state` between /login and /callback.
 # same_site="lax" lets the cookie ride along on the provider's top-level redirect back to us.
-app.add_middleware(SessionMiddleware, secret_key=signing_secret(), same_site="lax", max_age=600)
+# https_only: the cookie carries the OAuth state, so keep it off plain HTTP when the API is served over HTTPS.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=signing_secret(),
+    same_site="lax",
+    max_age=600,
+    https_only=(settings.oauth_callback_base_url or "").startswith("https://"),
+)
+# Added last = outermost: oversized bodies are refused before CORS/session handling, and every
+# response (errors and CORS preflights included) gets the security headers.
+app.add_middleware(BodySizeLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(auth.router)
 app.include_router(places.router)
 app.include_router(photos.router)
