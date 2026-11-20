@@ -1,15 +1,78 @@
-# HackYeah_2026
+<p align="center">
+  <img src="frontend/assets/focus_map_logo.svg" alt="Focus Map" width="260" />
+</p>
 
-## Authors
+<h3 align="center">Mapa miejsc do nauki i pracy — kawiarni, bibliotek i innych „trzecich miejsc”</h3>
+
+<p align="center">
+  <a href="https://thirdplaces.pl"><b>▶ thirdplaces.pl</b></a> ·
+  <a href="https://api.thirdplaces.pl/docs">API (Swagger)</a> ·
+  projekt z hackathonu <b>HackYeah 2026</b>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Flutter-web%20%7C%20Android-02569B?logo=flutter" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" />
+  <img src="https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white" />
+  <img src="https://img.shields.io/badge/deploy-Docker%20%2B%20Raspberry%20Pi-C51A4A?logo=raspberrypi" />
+  <img src="https://github.com/Lucjuszo/HackYeah_2026/actions/workflows/tests.yml/badge.svg" />
+</p>
+
+**Focus Map** pomaga znaleźć miejsce, w którym da się spokojnie posiedzieć z laptopem: kawiarnię z Wi-Fi
+i gniazdkami, cichą bibliotekę albo coworking. Na mapie widać oceny, ceny, godziny otwarcia i atmosferę
+miejsca, a społeczność dodaje nowe miejscówki, zdjęcia i opinie.
+
+<p align="center">
+  <img src="docs/img/app-mapa.png" alt="Aplikacja Focus Map — widok mapy" height="520" />
+</p>
+
+<details open>
+<summary><b>Projekt interfejsu (Figma)</b></summary>
+
+![Ekrany aplikacji: lista miejscówek, mapa, logowanie, dodawanie miejsca, szczegóły i filtry](docs/img/projekt-ui.png)
+
+</details>
+
+## Funkcje
+
+- **Mapa i lista miejscówek** (OpenStreetMap, `flutter_map`) z wyszukiwaniem miasta/adresu, „Moją lokalizacją”
+  i promieniem wyszukiwania.
+- **Filtry i sortowanie** — oceny, Wi-Fi, gniazdka, przedział cen, atmosfera (*spokojnie / na pogaduchy / gwarno*),
+  udogodnienia (toaleta, klima, gastronomia, dostęp do komputera…).
+- **Godziny otwarcia** ze statusem „otwarte teraz / zamknięte”, parsowane także z danych OSM.
+- **Opinie z gwiazdkami**, polubienia komentarzy, oceny w kategoriach.
+- **Dodawanie miejsc** ze zdjęciami i wyborem lokalizacji na mapie; nowe miejsca zatwierdza **panel admina**.
+- **Logowanie przez GitHub i Google** (OAuth), własne tokeny Bearer, rate limiting.
+- **Import danych z OpenStreetMap** (Overpass API) jako realistyczne dane startowe.
+- **CI/CD** — testy (pytest) i budowanie obrazów Dockera w GitHub Actions, wdrożenie na Raspberry Pi
+  za tunelem Cloudflare (szczegóły: [`docs/DEPLOY.md`](docs/DEPLOY.md)).
+
+## Architektura
+
+```
+Flutter (web / Android) ──HTTPS──► FastAPI ──► MongoDB Atlas
+        frontend/                    app/         zdjęcia: dysk lub Cloudinary
+                                     │
+                         OAuth: GitHub, Google · geokodowanie · import OSM
+```
+
+| Katalog | Zawartość |
+|---|---|
+| `app/` | backend FastAPI: routery (`places`, `ratings`, `comments`, `photos`, `auth`, `admin`, `geocode`), modele, repozytoria |
+| `frontend/` | aplikacja Flutter (mapa, lista, szczegóły, dodawanie miejsc, panel admina) — [README frontu](frontend/README.md) |
+| `scripts/` | import z OSM i dane testowe |
+| `tests/` | testy API (pytest) |
+| `deploy/` | Dockerfile, nginx, docker-compose dla Raspberry Pi |
+| `docs/` | dokumentacja: auth, integracja z frontem, wdrożenie |
+
+## Autorzy
 
 - Natalia Płocha
 - Lucjan Butko
 - Krzysztof Toczyński
 - Michał Kopczewski
 
-Backend: FastAPI + MongoDB (pymongo async).
-
-## Uruchomienie
+## Uruchomienie backendu
 
 ```bash
 pip install -r requirements.txt
