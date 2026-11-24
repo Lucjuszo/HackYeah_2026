@@ -26,6 +26,18 @@ RUN test -n "$API_URL" || { echo "API_URL build arg is required" >&2; exit 1; } 
     && flutter build web --release --dart-define=API_URL="$API_URL"
 
 
+# Cloudflare can cache unversioned .js for hours. Give each release entry point a content address.
+RUN cd build/web \
+    && bundle=$(sha256sum main.dart.js | cut -c1-16) \
+    && cp main.dart.js "main.$bundle.dart.js" \
+    && sed -i "s|main\.dart\.js|main.$bundle.dart.js|g" flutter_bootstrap.js \
+    && grep -Fq "main.$bundle.dart.js" flutter_bootstrap.js \
+    && bootstrap=$(sha256sum flutter_bootstrap.js | cut -c1-16) \
+    && cp flutter_bootstrap.js "flutter_bootstrap.$bootstrap.js" \
+    && sed -i "s|flutter_bootstrap\.js|flutter_bootstrap.$bootstrap.js|g" index.html \
+    && grep -Fq "flutter_bootstrap.$bootstrap.js" index.html
+
+
 FROM nginx:1.29-alpine
 COPY --from=deploy nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/build/web /usr/share/nginx/html
