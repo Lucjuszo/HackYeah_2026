@@ -18,7 +18,7 @@ def load(path):
 
 
 def test_there_are_examples():
-    assert len(PLACE_FILES) >= 5
+    assert len(PLACE_FILES) >= 3
 
 
 @pytest.mark.parametrize("path", PLACE_FILES, ids=lambda p: p.name)

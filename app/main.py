@@ -16,6 +16,7 @@ from app.repositories import ratings as ratings_repo
 from app.repositories import users as users_repo
 from app.geocoding import geocoder
 from app.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
+from app.verified_places import load_verified_places
 from app.routers import admin, auth, comments, geocode, media, photos, places, privacy, ratings
 
 
@@ -26,6 +27,11 @@ async def lifespan(app: FastAPI):
     try:
         for repo in (places_repo, ratings_repo, comments_repo, users_repo):
             await repo.ensure_indexes(db)
+        if settings.verified_places_dir is not None:
+            migration = {"_id": "gdansk-libraries-v1"}
+            if not await db.migrations.find_one(migration):
+                await load_verified_places(db, settings.verified_places_dir)
+                await db.migrations.update_one(migration, {"$set": {"completed_at": utcnow()}}, upsert=True)
     except ServerSelectionTimeoutError as e:
         hint = (
             "MongoDB Atlas usually refuses connections from IPs missing in Security -> Network Access "

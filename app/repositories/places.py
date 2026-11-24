@@ -194,6 +194,18 @@ async def ensure_indexes(db: AsyncDatabase) -> None:
     await places.create_index([("approved", 1), ("_id", -1)])
     await backfill_price_ranges(db)
     await backfill_approved(db)
+    await retire_fictional_places(db)
+
+
+async def retire_fictional_places(db: AsyncDatabase) -> int:
+    """Withdraw the six old demo listings while retaining community contributions."""
+    names = ["Kawiarnia Pod Kodem", "Czytelnia Kazimierz", "Cowork Hub Zabłocie",
+             "Nocna Stołówka", "Antykwariat i Kawa", "Kawiarnia Na Powiślu"]
+    result = await db[COLLECTION].update_many(
+        {"created_by": "seed", "is_mock": True, "name": {"$in": names}, "approved": True, "osm": {"$exists": False}},
+        {"$set": {"approved": False, "approved_at": None, "approved_by": None}},
+    )
+    return result.modified_count
 
 
 async def backfill_price_ranges(db: AsyncDatabase) -> int:

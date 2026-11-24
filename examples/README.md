@@ -19,28 +19,21 @@ Gotowa kolekcja Postmana: [`postman/`](../postman/README.md).
 
 ```bash
 python scripts/import_osm.py     # 30 prawdziwych kawiarni i restauracji z Krakowa (OSM) + dane mock
-python scripts/seed.py           # albo: 6 fikcyjnych miejsc i 3 rzeczywiste biblioteki w Gdańsku
+python scripts/seed.py           # 3 rzeczywiste biblioteki w Gdańsku
 ```
 
-Oba skrypty piszą do bazy wybranej w `.env`, oznaczają wszystko `is_mock: true` i przed startem
-usuwają **wszystkie** poprzednie dane mock (prawdziwych nie ruszają) – działa więc ten uruchomiony jako ostatni.
+Seed zachowuje istniejące biblioteki i ich opinie. Importer OSM zastępuje własne wcześniejsze rekordy.
 Przy imporcie z OSM pole `mock_fields` mówi, które dane są wymyślone (np. `menu`, `amenities.wifi`);
 reszta (nazwa, adres, współrzędne, godziny, udogodnienia z tagów OSM) jest prawdziwa.
 Dane mapy © OpenStreetMap contributors, licencja ODbL.
 
 | Plik w `examples/places/` | Co pokazuje |
 |---|---|
-| `01-kawiarnia-pod-kodem.json` | komplet pól, godziny przez północ w piątek, duże menu |
-| `02-czytelnia-kazimierz.json` | cicha czytelnia z dostępem do komputera, bez jedzenia |
-| `03-cowork-hub-zablocie.json` | całodobowy cowork (`always_open`), płatny wstęp `30-60` |
-| `04-nocna-stolowka.json` | otwarte tylko w nocy, przedziały rozbite o północy |
-| `05-antykwariat-i-kawa.json` | niepełne dane: większość udogodnień nieznana (`null`) |
-| `06-kawiarnia-na-powislu.json` | Warszawa, do testowania filtra odległości |
 | `07-gdansk-manhattan.json` | Biblioteka Manhattan, al. Grunwaldzka 82 · [karta filii](https://wbpg.org.pl/filia/biblioteka-manhattan/) |
 | `08-gdansk-pod-zolwiem.json` | Biblioteka pod Żółwiem, ul. św. Ducha 111/113 · [karta filii](https://wbpg.org.pl/filia/biblioteka-pod-zolwiem/) |
 | `09-gdansk-lawendowa.json` | Biblioteka Lawendowa, ul. Lawendowe Wzgórze 5 · [karta filii](https://wbpg.org.pl/filia/biblioteka-lawendowa/) |
 
-Adresy, pinezki i regularne godziny otwarcia gdańskich filii pochodzą z kart WiMBP. Seed traktuje te rekordy jako dane demonstracyjne i pozostawia ich oceny oraz opinie puste.
+Adresy, pinezki i regularne godziny otwarcia gdańskich filii pochodzą z kart WiMBP. Seed zapisuje biblioteki jako rzeczywiste miejsca. Oceny i opinie mogą dodawać użytkownicy.
 
 ---
 
@@ -82,7 +75,7 @@ curl http://localhost:8000/auth/providers
 curl -X POST http://localhost:8000/places \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <TOKEN>" \
-  -d @examples/places/01-kawiarnia-pod-kodem.json
+  -d @examples/places/07-gdansk-manhattan.json
 ```
 `201`, w odpowiedzi całe miejsce z `id`. `409`, jeśli miejsce z tym samym `osm` już istnieje.
 

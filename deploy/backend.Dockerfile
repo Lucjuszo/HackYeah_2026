@@ -13,11 +13,13 @@ FROM python:3.13-slim
 ENV PATH=/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    VERIFIED_PLACES_DIR=/app/verified-places \
     HACKYEAH_ENV_FILE=""
 RUN useradd --system --uid 10001 --home-dir /app app
 WORKDIR /app
 COPY --from=build /venv /venv
 COPY app ./app
+COPY examples/places/*.json ./verified-places/
 # Local photo storage (STORAGE_BACKEND=local / no Cloudinary); a volume in compose.
 RUN mkdir media && chown app:app media
 USER app

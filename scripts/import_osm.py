@@ -4,7 +4,7 @@
     python scripts/import_osm.py --refresh     # fetches fresh data from Overpass first
     python scripts/import_osm.py --count 40
 
-Removes ALL mock data first (is_mock=true, including data from scripts/seed.py), then inserts
+Replaces records from earlier runs of this OSM importer, then inserts
 --count places, half cafes and half restaurants, marked is_mock=true. Name, address, coordinates,
 the OSM link and every tag we can map (opening hours, wifi, wheelchair access, cuisine, ...) are
 real; everything else is made up and listed in the place's `mock_fields`. Ratings and comments
@@ -36,7 +36,6 @@ from app.models.place import Amenities, Place, PlaceCreate  # noqa: E402
 from app.osm.mapping import OsmFacts, facts_from_element  # noqa: E402
 from app.repositories import comments, places, ratings  # noqa: E402
 from scripts import mock_content as mock  # noqa: E402
-from scripts.seed import clear_mock_data  # noqa: E402
 
 SNAPSHOT = ROOT / "data" / "osm" / "krakow-cafes-restaurants.json"
 IMPORT_AUTHOR = "osm-import"
@@ -153,7 +152,10 @@ async def import_places(
     """Returns (number of old mock places removed, imported places)."""
     for repo in (places, ratings, comments):
         await repo.ensure_indexes(db)
-    removed = await clear_mock_data(db)
+    old = await db[places.COLLECTION].distinct("_id", {"created_by": IMPORT_AUTHOR, "is_mock": True})
+    await db[ratings.COLLECTION].delete_many({"place_id": {"$in": old}})
+    await db[comments.COLLECTION].delete_many({"place_id": {"$in": old}})
+    removed = (await db[places.COLLECTION].delete_many({"_id": {"$in": old}})).deleted_count
 
     wanted = {"cafe": count // 2, "restaurant": count - count // 2}
     imported: list[Place] = []

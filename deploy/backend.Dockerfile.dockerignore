@@ -1,5 +1,5 @@
-# Only requirements.txt and app/ go into the backend image (secrets and local data never do).
 *
 !requirements.txt
 !app/
 **/__pycache__
+!examples/places/*.json

@@ -1,14 +1,8 @@
 import asyncio
 
-import pytest
-
 from app.config import settings
 from app.db import create_client
 from scripts import seed
-from tests.helpers import EXAMPLES_DIR
-
-PLACE_FILES = len(list((EXAMPLES_DIR / "places").glob("*.json")))
-REVIEWS = [review for reviews in seed.REVIEWS.values() for review in reviews]
 
 
 def run_seed():
@@ -22,53 +16,23 @@ def run_seed():
     return asyncio.run(go())
 
 
-def test_every_example_has_review_entry():
-    assert set(seed.REVIEWS) == {p.name for p in (EXAMPLES_DIR / "places").glob("*.json")}
+def test_seed_only_loads_verified_libraries_and_preserves_reviews(db, client):
+    first = run_seed()
+    assert {p.name for p in first} == {"Biblioteka Manhattan", "Biblioteka pod Żółwiem", "Biblioteka Lawendowa"}
+    assert all(p.address.city == "Gdańsk" and not p.is_mock for p in first)
+    url = f"/places/{first[0].id}/comments"
+    assert client.post(url, json={"text": "Moja opinia", "score": 4}).status_code == 201
+    assert [p.id for p in run_seed()] == [p.id for p in first]
+    assert [c["text"] for c in client.get(url).json()] == ["Moja opinia"]
 
 
-def test_seeds_examples_marked_as_mock(db, client):
-    removed, seeded = run_seed()
-
-    assert removed == 0
-    assert len(seeded) == PLACE_FILES
-    assert all(place.is_mock for place in seeded)
-    assert db.places.count_documents({"is_mock": True}) == PLACE_FILES
-    assert db.ratings.count_documents({"is_mock": True}) == len(REVIEWS)
-    assert db.comments.count_documents({"is_mock": True}) == sum(1 for *_, text in REVIEWS if text)
-
-    cafe = next(p for p in seeded if p.name == "Kawiarnia Pod Kodem")
-    assert cafe.rating.count == 3
-    assert cafe.rating.average == pytest.approx(14 / 3)
-
-    # is_mock is visible through the API too
-    api_place = client.get(f"/places/{cafe.id}").json()
-    assert api_place["is_mock"] is True
-    assert all(c["is_mock"] for c in client.get(f"/places/{cafe.id}/comments").json())
-
-
-def test_rerun_replaces_mock_data_and_keeps_real_data(db, client, minimal_payload):
-    real = client.post("/places", json=minimal_payload).json()
-    client.put(f"/places/{real['id']}/ratings/me", json={"score": 3})
-    client.post(f"/places/{real['id']}/comments", json={"text": "prawdziwy", "score": 4})
-
-    first_ids = {p.id for p in run_seed()[1]}
-    removed, seeded = run_seed()
-
-    assert removed == PLACE_FILES
-    assert first_ids.isdisjoint(p.id for p in seeded)
-    assert db.places.count_documents({"is_mock": True}) == PLACE_FILES
-    assert db.ratings.count_documents({"is_mock": True}) == len(REVIEWS)
-
-    assert real["is_mock"] is False
-    after = client.get(f"/places/{real['id']}").json()
-    assert after["rating"] == {"average": 3, "count": 1}
-    assert [c["text"] for c in client.get(f"/places/{real['id']}/comments").json()] == ["prawdziwy"]
-
-
-def test_mock_comments_on_mock_place_by_real_user_are_removed(db, client):
-    _, seeded = run_seed()
-    place_id = seeded[0].id
-    client.post(f"/places/{place_id}/comments", json={"text": "real user on mock place", "score": 4})
-
+def test_only_legacy_seeded_fakes_leave_the_public_map(db, client, minimal_payload):
+    name = "Kawiarnia Pod Kodem"
+    genuine = client.post("/places", json={**minimal_payload, "name": name}).json()
+    legacy = db.places.find_one({"name": name})
+    del legacy["_id"]
+    legacy.update(created_by="seed", is_mock=True)
+    fake_id = db.places.insert_one(legacy).inserted_id
     run_seed()
-    assert db.comments.count_documents({"is_mock": False}) == 0
+    assert db.places.find_one({"_id": fake_id})["approved"] is False
+    assert [p["id"] for p in client.get("/places/summary", params={"q": name}).json()] == [genuine["id"]]

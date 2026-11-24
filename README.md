@@ -109,15 +109,14 @@ CORS, logowanie, wyszukiwanie, zdjęcia, paginacja, błędy: [`docs/FRONTEND.md`
 
 ```bash
 python scripts/import_osm.py              # 30 prawdziwych kawiarni i restauracji z Krakowa (OSM) + dane mock
-python scripts/seed.py                    # albo 6 fikcyjnych miejsc i 3 rzeczywiste biblioteki w Gdańsku
+python scripts/seed.py                    # 3 rzeczywiste biblioteki w Gdańsku
 ```
 
-Oba piszą do bazy wybranej w `.env` i oznaczają wszystko `is_mock: true`; przed startem usuwają
-**wszystkie** poprzednie dane mock (prawdziwych nie ruszają). Przy imporcie z OSM nazwa, adres,
+Seed zachowuje identyfikatory i opinie bibliotek przy ponownej synchronizacji.
+Importer OSM zastępuje własne poprzednie rekordy demonstracyjne. Przy imporcie z OSM nazwa, adres,
 współrzędne, godziny i tagi OSM są prawdziwe, a `mock_fields` wymienia pola wymyślone.
 Dane OSM są w repo jako snapshot (`data/osm/`, © OpenStreetMap contributors, ODbL);
 `--refresh` pobiera świeże z Overpass API.
-Usunięcie danych mock w Compass: filtr `{ "is_mock": true }` w kolekcjach `places`, `ratings`, `comments`.
 
 ### Przykłady
 

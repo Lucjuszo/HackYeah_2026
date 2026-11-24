@@ -42,7 +42,7 @@ from app.routers.places import create_limiter, edit_limiter  # noqa: E402
 
 from tests.helpers import DEFAULT_USER, EXAMPLES_DIR, MEDIA_DIR, as_user  # noqa: E402
 
-EXAMPLE_PLACE = EXAMPLES_DIR / "places" / "01-kawiarnia-pod-kodem.json"
+EXAMPLE_PLACE = Path(__file__).parent / "fixtures" / "place.json"
 
 
 @pytest.fixture(scope="session")

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import unquote, urlsplit
 
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     mongo_uri: str = "mongodb://root:example@localhost:27017"
 
     mongo_db: str = "hackyeah"
+    verified_places_dir: Path | None = None
 
     # --- Frontend
     # Comma-separated origins allowed to call the API from a browser (CORS). "*" allows any.
