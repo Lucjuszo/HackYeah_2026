@@ -58,7 +58,9 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   bool _ratingBusy = false;
   final _commentController = TextEditingController();
   bool _posting = false;
-  final Set<String> _liking = <String>{}; // comment ids with a like request in flight
+  final _submission = Submission();
+  final Set<String> _liking =
+      <String>{}; // comment ids with a like request in flight
   int _uploading = 0; // photos still being sent
 
   /// Same limit as the API (MAX_PHOTOS_PER_PLACE).
@@ -67,6 +69,7 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   @override
   void initState() {
     super.initState();
+    _place = widget.api.cachedPlace(_placeId, token: widget.auth.token);
     _loadPlace();
     _loadComments();
     _loadMine();
@@ -112,7 +115,7 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
     try {
       await action(token);
     } on ApiException catch (e) {
-      if (e.statusCode == 401) {
+      if (e.statusCode == 401 && mounted) {
         await widget.auth.invalidate();
         if (mounted) setState(() => _me = null);
       }
@@ -177,9 +180,11 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
           text,
           token: token,
           score: score,
+          requestKey: _submission.keyFor([_placeId, text, score]),
         );
         if (!mounted) return;
-        _commentController.clear();
+        _submission.clear();
+        if (_commentController.text.trim() == text) _commentController.clear();
         FocusScope.of(context).unfocus();
         setState(() {
           _comments.insert(0, comment); // newest first, like the list
@@ -219,55 +224,61 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
   Future<void> _toggleLike(Comment comment) async {
     if (_liking.contains(comment.id)) return;
     await _withLogin(
-      (String token) => _busy((bool v) {
-        v ? _liking.add(comment.id) : _liking.remove(comment.id);
-      }, () async {
-        final updated = await widget.api.likeComment(
-          _placeId,
-          comment.id,
-          liked: !comment.isLikedBy(_me?.id),
-          token: token,
-        );
-        if (!mounted) return;
-        setState(() {
-          final i = _comments.indexWhere((Comment c) => c.id == comment.id);
-          if (i >= 0) _comments[i] = updated;
-        });
-      }),
+      (String token) => _busy(
+        (bool v) {
+          v ? _liking.add(comment.id) : _liking.remove(comment.id);
+        },
+        () async {
+          final updated = await widget.api.likeComment(
+            _placeId,
+            comment.id,
+            liked: !comment.isLikedBy(_me?.id),
+            token: token,
+          );
+          if (!mounted) return;
+          setState(() {
+            final i = _comments.indexWhere((Comment c) => c.id == comment.id);
+            if (i >= 0) _comments[i] = updated;
+          });
+        },
+      ),
       reason: 'Zaloguj się, żeby polubić opinię.',
     );
   }
 
   Future<void> _deleteComment(Comment comment) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('Usunąć opinię?'),
-        content: const Text('Tej operacji nie można cofnąć.'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Anuluj'),
-          ),
-          TextButton(
-            key: const ValueKey<String>('confirm-delete'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text(
-              'Usuń',
-              style: TextStyle(color: AppColors.closed),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    await _withLogin((String token) async {
-      await widget.api.deleteComment(_placeId, comment.id, token: token);
-      if (!mounted) return;
+    final api = widget.api;
+    final placeId = _placeId;
+    await _withLogin((token) async {
+      final index = _comments.indexWhere((c) => c.id == comment.id);
+      if (index < 0) return;
       setState(() {
-        _comments.removeWhere((Comment c) => c.id == comment.id);
+        _comments.removeAt(index);
         _commentsTotal--;
       });
+      void restore() {
+        if (!mounted || _comments.any((c) => c.id == comment.id)) return;
+        setState(() {
+          _comments.insert(index.clamp(0, _comments.length), comment);
+          _commentsTotal++;
+        });
+      }
+
+      final notice = ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Opinia usunięta'),
+          persist: false,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(label: 'Cofnij', onPressed: restore),
+        ),
+      );
+      if (await notice.closed == SnackBarClosedReason.action) return;
+      try {
+        await api.deleteComment(placeId, comment.id, token: token);
+      } on ApiException {
+        restore();
+        rethrow;
+      }
     });
   }
 
@@ -301,7 +312,9 @@ class _PlaceDetailsPageState extends State<PlaceDetailsPage> {
         // The order follows likes, which can change between pages: a comment that moved down
         // would come again, so don't show it twice.
         final shown = {for (final c in _comments) c.id};
-        _comments.addAll(page.items.where((Comment c) => !shown.contains(c.id)));
+        _comments.addAll(
+          page.items.where((Comment c) => !shown.contains(c.id)),
+        );
         _commentsTotal = page.total;
         _commentsLoading = false;
       });
@@ -1352,12 +1365,17 @@ class _CommentTile extends StatelessWidget {
                   onTap: onLike,
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
                         Icon(
-                          liked ? Icons.thumb_up_alt_rounded : Icons.thumb_up_alt_outlined,
+                          liked
+                              ? Icons.thumb_up_alt_rounded
+                              : Icons.thumb_up_alt_outlined,
                           size: 16,
                           color: liked ? AppColors.primary : AppColors.muted,
                         ),
@@ -1368,7 +1386,9 @@ class _CommentTile extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: liked ? AppColors.primary : AppColors.muted,
+                              color: liked
+                                  ? AppColors.primary
+                                  : AppColors.muted,
                             ),
                           ),
                         ],

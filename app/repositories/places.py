@@ -9,6 +9,7 @@ from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 from pymongo.errors import DuplicateKeyError
 
+from app.repositories.submissions import insert_creation
 from app.db import parse_object_id, utcnow
 from app.models.opening_hours import OpeningHours
 from app.models.place import (
@@ -231,16 +232,16 @@ async def create_place(
     place: PlaceCreate,
     user_id: str,
     *,
+    request_key: str | None = None,
     is_mock: bool = False,
     mock_fields: Sequence[str] = (),
     approved: bool = True,
 ) -> Place:
     doc = to_document(place, user_id, is_mock=is_mock, mock_fields=mock_fields, approved=approved)
     try:
-        result = await db[COLLECTION].insert_one(doc)
+        doc = await insert_creation(db[COLLECTION], doc, user=user_id, key=request_key, payload=place.model_dump(mode="json"), scope="place")
     except DuplicateKeyError as e:
         raise PlaceAlreadyExists from e
-    doc["_id"] = result.inserted_id
     return from_document(doc)
 
 

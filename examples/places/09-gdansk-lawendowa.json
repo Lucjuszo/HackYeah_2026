@@ -1,0 +1,45 @@
+{
+  "name": "Biblioteka Lawendowa",
+  "category": "library",
+  "address": {
+    "city": "Gdańsk",
+    "country_code": "pl",
+    "street": "ul. Lawendowe Wzgórze",
+    "house_number": "5",
+    "postcode": "80-175"
+  },
+  "coordinates": {
+    "lat": 54.3267243,
+    "lon": 18.5654933
+  },
+  "opening_hours": {
+    "always_open": false,
+    "periods": [
+      {
+        "day": 0,
+        "open": "09:00",
+        "close": "19:00"
+      },
+      {
+        "day": 1,
+        "open": "09:00",
+        "close": "19:00"
+      },
+      {
+        "day": 2,
+        "open": "09:00",
+        "close": "15:00"
+      },
+      {
+        "day": 3,
+        "open": "09:00",
+        "close": "19:00"
+      },
+      {
+        "day": 4,
+        "open": "09:00",
+        "close": "19:00"
+      }
+    ]
+  }
+}

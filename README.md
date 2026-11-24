@@ -109,7 +109,7 @@ CORS, logowanie, wyszukiwanie, zdjęcia, paginacja, błędy: [`docs/FRONTEND.md`
 
 ```bash
 python scripts/import_osm.py              # 30 prawdziwych kawiarni i restauracji z Krakowa (OSM) + dane mock
-python scripts/seed.py                    # albo 6 wymyślonych miejsc z examples/places/
+python scripts/seed.py                    # albo 6 fikcyjnych miejsc i 3 rzeczywiste biblioteki w Gdańsku
 ```
 
 Oba piszą do bazy wybranej w `.env` i oznaczają wszystko `is_mock: true`; przed startem usuwają

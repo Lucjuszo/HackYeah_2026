@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
+import 'package:flutter/material.dart' hide Page;
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -147,14 +148,47 @@ class MapHomePage extends StatefulWidget {
   State<MapHomePage> createState() => _MapHomePageState();
 }
 
+class _CityTiles extends NetworkTileProvider {
+  @override
+  ImageProvider getImageWithCancelLoadingSupport(
+    TileCoordinates tile,
+    TileLayer options,
+    Future<void> cancelLoading,
+  ) {
+    if (tile.z == 14 &&
+        tile.x >= 9097 &&
+        tile.x <= 9102 &&
+        tile.y >= 5550 &&
+        tile.y <= 5554) {
+      return AssetImage('assets/krakow/${tile.x}-${tile.y}.webp');
+    }
+    return super.getImageWithCancelLoadingSupport(tile, options, cancelLoading);
+  }
+}
+
 class _MapHomePageState extends State<MapHomePage> {
-  static const double _sheetMin = 0.14;
+  static const double _sheetMin = 0.36;
+  static const _krakow = LatLng(50.0568, 19.945);
   // Keep the search, location and filter controls visible above the expanded list.
   static const double _sheetMax = 0.78;
 
   final _searchController = TextEditingController();
+  Timer? _intentTimer;
+  void _prefetch(PlaceSummary place, bool active) {
+    _intentTimer?.cancel();
+    if (active)
+      _intentTimer = Timer(const Duration(milliseconds: 180), () async {
+        try {
+          await widget.api.prefetchPlace(place.id, token: widget.auth.token);
+        } on ApiException {
+          /* Explicit opening offers retry. */
+        }
+      });
+  }
+
   final _sheetController = DraggableScrollableController();
   final _mapController = MapController();
+  late final _tiles = widget.tileProvider ?? _CityTiles();
   final _reloadTiles = StreamController<void>.broadcast();
 
   // Filters
@@ -178,12 +212,13 @@ class _MapHomePageState extends State<MapHomePage> {
   bool _loading = false;
   String? _error;
   int _requestId = 0;
+  final _recentPages = <String, Page<PlaceSummary>>{};
+  final _fetching = <String, Future<Page<PlaceSummary>>>{};
   bool _mapReady = false;
   bool _initialFitDone = false;
   Size? _searchedMapSize; // map size of the last search; a new size shows a different area
   Timer? _reloadDebounce;
   String? _selectedId;
-  bool _sheetExpanded = false;
 
   /// The user moved the map or picked a place: a late GPS fix must not move the camera.
   bool _userMovedMap = false;
@@ -204,6 +239,7 @@ class _MapHomePageState extends State<MapHomePage> {
   @override
   void dispose() {
     _reloadDebounce?.cancel();
+    _intentTimer?.cancel();
     _searchController.dispose();
     _sheetController.dispose();
     _mapController.dispose();
@@ -222,10 +258,7 @@ class _MapHomePageState extends State<MapHomePage> {
 
   void _fitPoland() {
     _mapController.fitCamera(
-      CameraFit.bounds(
-        bounds: polandBounds,
-        padding: const EdgeInsets.all(16),
-      ),
+      CameraFit.bounds(bounds: polandBounds, padding: const EdgeInsets.all(16)),
     );
   }
 
@@ -236,7 +269,11 @@ class _MapHomePageState extends State<MapHomePage> {
     _initialFitDone = true;
     if (!_userMovedMap) {
       // The device position may have arrived while the size was still unknown.
-      _location.point == null ? _fitPoland() : _showLocation(_location);
+      if (_location.point == null) {
+        _mapController.move(_krakow, 14.4);
+      } else {
+        _showLocation(_location);
+      }
     }
     // flutter_map loads tiles only on map events, which at start may carry an older camera:
     // the tiles of the final view would stay blank until the user moved the map.
@@ -333,12 +370,28 @@ class _MapHomePageState extends State<MapHomePage> {
     _reloadDebounce?.cancel();
     _searchedMapSize = _mapController.camera.nonRotatedSize;
     final id = ++_requestId;
+    final query = _query();
+    final key = query.toQueryParameters().toString();
+    final cached = _recentPages[key];
     setState(() {
       _loading = true;
+      if (cached != null) {
+        _places = cached.items;
+        _total = cached.total;
+      }
       _error = null;
     });
     try {
-      final page = await widget.api.searchPlaces(_query());
+      final page = await _fetching.putIfAbsent(
+        key,
+        () => widget.api.searchPlaces(query).whenComplete(() {
+          _fetching.remove(key);
+        }),
+      );
+      _recentPages.remove(key);
+      _recentPages[key] = page;
+      if (_recentPages.length > 24)
+        _recentPages.remove(_recentPages.keys.first);
       if (!mounted || id != _requestId) return;
       setState(() {
         _places = page.items;
@@ -542,6 +595,11 @@ class _MapHomePageState extends State<MapHomePage> {
   }
 
   void _setSpotSheetExpanded(bool expanded) {
+    if (_sheetController.isAttached &&
+        MediaQuery.disableAnimationsOf(context)) {
+      _sheetController.jumpTo(expanded ? _sheetMax : _sheetMin);
+      return;
+    }
     if (!_sheetController.isAttached) return;
     _sheetController.animateTo(
       expanded ? _sheetMax : _sheetMin,
@@ -665,11 +723,11 @@ class _MapHomePageState extends State<MapHomePage> {
     bool active = false,
     bool chevron = true,
   }) {
-    final foreground = active ? AppColors.white : AppColors.activeText;
+    final foreground = active ? AppColors.white : AppColors.ink;
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: Material(
-        color: active ? AppColors.primary : AppColors.chip,
+        color: active ? AppColors.ink : AppColors.chip,
         borderRadius: BorderRadius.circular(18),
         child: InkWell(
           onTap: onTap,
@@ -818,80 +876,116 @@ class _MapHomePageState extends State<MapHomePage> {
           }
 
           return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text(
-                    'Filtruj',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    children: <Widget>[
-                      _toggle(
-                        'Otwarte teraz',
-                        _openNow,
-                        () => update(() => _openNow = !_openNow),
-                        icon: Icons.schedule_rounded,
-                        key: const ValueKey<String>('filter-open-now'),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text(
+                      'Filtry miejsc',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                       ),
-                      _toggle(
-                        'Gniazdka',
-                        _powerOutlets,
-                        () => update(() => _powerOutlets = !_powerOutlets),
-                        icon: Icons.power_rounded,
-                      ),
-                      for (final atmosphere in Atmosphere.values)
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      children: <Widget>[
                         _toggle(
-                          atmosphere.label,
-                          _atmosphere == atmosphere,
-                          () => update(
-                            () => _atmosphere = _atmosphere == atmosphere
-                                ? null
-                                : atmosphere,
-                          ),
-                          icon: Icons.graphic_eq_rounded,
+                          'Otwarte teraz',
+                          _openNow,
+                          () => update(() => _openNow = !_openNow),
+                          icon: Icons.schedule_rounded,
+                          key: const ValueKey<String>('filter-open-now'),
                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.info_outline_rounded,
-                        size: 15,
-                        color: AppColors.infoText,
+                        _toggle(
+                          'Gniazdka',
+                          _powerOutlets,
+                          () => update(() => _powerOutlets = !_powerOutlets),
+                          icon: Icons.power_rounded,
+                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12, bottom: 8),
+                      child: Text(
+                        'Atmosfera',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      const SizedBox(width: 5),
-                      const Expanded(
-                        child: Text(
-                          'Możesz łączyć kilka filtrów',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.greyText,
+                    ),
+                    Wrap(
+                      children: [
+                        for (final atmosphere in Atmosphere.values)
+                          _toggle(
+                            atmosphere.label,
+                            _atmosphere == atmosphere,
+                            () => update(
+                              () => _atmosphere = _atmosphere == atmosphere
+                                  ? null
+                                  : atmosphere,
+                            ),
+                            icon: Icons.graphic_eq_rounded,
                           ),
-                        ),
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12, bottom: 8),
+                      child: Text(
+                        'Wyszukiwanie',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      if (_hasAnyFilter)
-                        TextButton(
-                          onPressed: () {
-                            _clearFilters();
-                            setSheetState(() {});
-                          },
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          child: const Text(
-                            'Wyczyść',
-                            style: TextStyle(fontSize: 12),
+                    ),
+                    Wrap(
+                      runSpacing: 6,
+                      children: [
+                        ..._filterChips().take(4),
+                        _filterChip(
+                          icon: Icons.radar,
+                          label: _radius.km == null ? 'Promień' : _radius.label,
+                          onTap: () => _showOptions<_RadiusFilter>(
+                            title: 'Promień wyszukiwania',
+                            options: _RadiusFilter.values,
+                            value: _radius,
+                            label: (r) => r == _RadiusFilter.none
+                                ? 'Bez ograniczenia'
+                                : r.label,
+                            onSelected: _selectRadius,
                           ),
                         ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: <Widget>[
+                        FilledButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.ink,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Pokaż miejsca'),
+                        ),
+                        const Spacer(),
+                        if (_hasAnyFilter)
+                          TextButton(
+                            onPressed: () {
+                              _clearFilters();
+                              setSheetState(() {});
+                            },
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: const Text(
+                              'Wyczyść',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           );
@@ -924,7 +1018,6 @@ class _MapHomePageState extends State<MapHomePage> {
   }
 
   Future<void> _openSearch() async {
-    FocusManager.instance.primaryFocus?.unfocus();
     final query = await Navigator.of(context).push<String>(
       PageRouteBuilder<String>(
         transitionDuration: const Duration(milliseconds: 200),
@@ -938,7 +1031,7 @@ class _MapHomePageState extends State<MapHomePage> {
       ),
     );
     if (!mounted || query == null) return; // back = keep the current search
-    _searchController.text = query;
+    _searchController.text = query.trim();
     if (query.isNotEmpty) {
       _recentSearches
         ..remove(query)
@@ -948,162 +1041,143 @@ class _MapHomePageState extends State<MapHomePage> {
     _setFilter(() {});
   }
 
-  Widget _header() {
-    final locationLabel = _location == LocationChoice.wholeCountry
-        ? 'Lokalizacja'
+  Widget _brandBar(bool wide) {
+    final location = _location == LocationChoice.wholeCountry
+        ? (!_userMovedMap ? 'Kraków' : 'Obszar mapy')
         : _location.label;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Column(
-        children: <Widget>[
-          Container(
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.field,
-              borderRadius: BorderRadius.circular(22),
+    return Material(
+      color: AppColors.background,
+      child: Container(
+        height: wide ? 76 : 56,
+        padding: EdgeInsets.symmetric(horizontal: wide ? 28 : 16),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.divider)),
+        ),
+        child: Row(
+          children: [
+            SvgPicture.asset(
+              'assets/focus_map_logo.svg',
+              width: wide ? 94 : 74,
+              semanticsLabel: 'Focus Map',
             ),
-            child: TextField(
-              key: const ValueKey<String>('place-search'),
-              controller: _searchController,
-              textAlignVertical: TextAlignVertical.center,
-              // Typing happens on the search screen: no keyboard over the map.
-              readOnly: true,
-              showCursor: false,
-              enableInteractiveSelection: false,
-              onTap: _openSearch,
-              decoration: InputDecoration(
-                hintText: 'Szukaj miejscówki',
-                hintStyle: const TextStyle(
-                  color: AppColors.hintText,
-                  fontSize: 13,
-                ),
-                prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 44,
-                  minHeight: 42,
-                ),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Wyczyść',
-                        iconSize: 17,
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () {
-                          _searchController.clear();
-                          _setFilter(() {});
-                        },
-                      ),
-                suffixIconConstraints: const BoxConstraints(
-                  minWidth: 44,
-                  minHeight: 42,
-                ),
-                isDense: true,
-                contentPadding: EdgeInsets.zero,
-                border: InputBorder.none,
+            const Spacer(),
+            TextButton.icon(
+              key: const ValueKey('location-picker-trigger'),
+              onPressed: _openLocationPicker,
+              icon: const Icon(Icons.place_outlined, size: 18),
+              label: Text(location),
+            ),
+            const SizedBox(width: 8),
+            if (wide)
+              OutlinedButton.icon(
+                key: const ValueKey('add-place'),
+                onPressed: _openAddPlace,
+                icon: const Icon(Icons.add, size: 17),
+                label: const Text('Dodaj miejsce'),
+              )
+            else
+              IconButton.outlined(
+                key: const ValueKey('add-place'),
+                onPressed: _openAddPlace,
+                tooltip: 'Dodaj miejsce',
+                icon: const Icon(Icons.add, size: 19),
               ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            height: 42,
-            decoration: BoxDecoration(
-              color: AppColors.field,
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Material(
-                    color: AppColors.transparent,
-                    child: InkWell(
-                      key: const ValueKey<String>('location-picker-trigger'),
-                      onTap: _openLocationPicker,
-                      borderRadius: const BorderRadius.horizontal(
-                        left: Radius.circular(22),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 13, right: 8),
-                        child: Row(
-                          children: <Widget>[
-                            Icon(
-                              _location.isDevice
-                                  ? Icons.my_location_rounded
-                                  : Icons.location_on_outlined,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                locationLabel,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Container(width: 1, height: 25, color: AppColors.controlBorder),
-                Material(
-                  color: AppColors.transparent,
-                  child: InkWell(
-                    key: const ValueKey<String>('radius-picker-trigger'),
-                    onTap: () => _showOptions<_RadiusFilter>(
-                      title: 'Promień wyszukiwania',
-                      options: _RadiusFilter.values,
-                      value: _radius,
-                      label: (radius) => radius == _RadiusFilter.none
-                          ? 'Bez ograniczenia'
-                          : radius.label,
-                      onSelected: _selectRadius,
-                    ),
-                    borderRadius: const BorderRadius.horizontal(
-                      right: Radius.circular(22),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 11),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Text(
-                            _radius.km == null ? 'Promień' : '${_radius.km} km',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 17,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 32,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(children: _filterChips()),
-            ),
-          ),
-        ],
+            if (_isAdmin)
+              IconButton(
+                key: const ValueKey('open-admin'),
+                tooltip: 'Panel admina',
+                onPressed: _openAdmin,
+                icon: const Icon(Icons.admin_panel_settings_outlined),
+              ),
+          ],
+        ),
       ),
     );
   }
 
+  Widget _header() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Material(
+          color: AppColors.field,
+          borderRadius: BorderRadius.circular(14),
+          child: ListTile(
+            key: const ValueKey('place-search'),
+            dense: true,
+            minTileHeight: 46,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            leading: const Tooltip(
+              message: 'Szukaj · Ctrl / ⌘ + K',
+              child: Icon(Icons.search_rounded),
+            ),
+            onTap: _openSearch,
+            title: Text(
+              _searchController.text.isEmpty
+                  ? 'Gdzie chcesz popracować?'
+                  : _searchController.text,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+            ),
+            trailing: _searchController.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Wyczyść',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => _setFilter(_searchController.clear),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _filterChip(
+                      icon: Icons.volume_down_outlined,
+                      label: 'Cicho',
+                      active: _atmosphere == Atmosphere.quiet,
+                      chevron: false,
+                      onTap: () => _setFilter(
+                        () => _atmosphere = _atmosphere == Atmosphere.quiet
+                            ? null
+                            : Atmosphere.quiet,
+                      ),
+                    ),
+                    _filterChip(
+                      icon: Icons.power_outlined,
+                      label: 'Gniazdka',
+                      active: _powerOutlets,
+                      chevron: false,
+                      onTap: () =>
+                          _setFilter(() => _powerOutlets = !_powerOutlets),
+                    ),
+                    _filterChip(
+                      icon: Icons.schedule,
+                      label: 'Otwarte',
+                      active: _openNow,
+                      chevron: false,
+                      onTap: () => _setFilter(() => _openNow = !_openNow),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Wszystkie filtry',
+              onPressed: _showMoreFilters,
+              icon: const Icon(Icons.tune, size: 18),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
   // --- map
 
   Widget _map() {
@@ -1118,8 +1192,8 @@ class _MapHomePageState extends State<MapHomePage> {
       options: MapOptions(
         // Roughly Poland until the size is known; then _fitInitialCamera. (No initialCameraFit:
         // flutter_map applies it after the size arrives, over the device position chosen meanwhile.)
-        initialCenter: polandBounds.center,
-        initialZoom: 6,
+        initialCenter: _krakow,
+        initialZoom: 14.4,
         minZoom: 4,
         maxZoom: 19,
         backgroundColor: AppColors.mapBackground,
@@ -1157,7 +1231,7 @@ class _MapHomePageState extends State<MapHomePage> {
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             userAgentPackageName: 'pl.hackyeah.miejscowki',
             maxZoom: 19,
-            tileProvider: widget.tileProvider,
+            tileProvider: _tiles,
             reset: _reloadTiles.stream,
           ),
         if (_radius.km case final km?)
@@ -1207,12 +1281,13 @@ class _MapHomePageState extends State<MapHomePage> {
               Marker(
                 key: ValueKey<String>('marker-${place.id}'),
                 point: LatLng(place.location.lat, place.location.lon),
-                width: 64,
-                height: 30,
-                child: GestureDetector(
+                width: place.id == _selectedId ? 212 : 68,
+                height: 44,
+                child: InkWell(
                   onTap: () => setState(() => _selectedId = place.id),
                   child: Center(
                     child: MapMarker(
+                      label: place.name,
                       rating: place.rating.average,
                       selected: place.id == _selectedId,
                     ),
@@ -1221,10 +1296,18 @@ class _MapHomePageState extends State<MapHomePage> {
               ),
           ],
         ),
-        SimpleAttributionWidget(
-          source: const Text('OpenStreetMap contributors'),
+        Align(
           alignment: Alignment.topRight,
-          backgroundColor: AppColors.white.withValues(alpha: 0.75),
+          child: Material(
+            color: AppColors.white.withValues(alpha: .9),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              child: Text(
+                '© OpenStreetMap · OpenMapTiles · OpenFreeMap',
+                style: const TextStyle(fontSize: 10, color: AppColors.muted),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -1255,6 +1338,22 @@ class _MapHomePageState extends State<MapHomePage> {
       bottom: bottom,
       child: Column(
         children: <Widget>[
+          for (final step in [1, -1])
+            button(
+              step > 0 ? Icons.add : Icons.remove,
+              step > 0 ? 'Przybliż' : 'Oddal',
+              () {
+                final camera = _mapController.camera;
+                _userMovedMap = true;
+                _mapController.move(
+                  camera.center,
+                  (step > 0 ? camera.zoom.floor() + 1 : camera.zoom.ceil() - 1)
+                      .clamp(4, 19)
+                      .toDouble(),
+                );
+                _reloadSoon();
+              },
+            ),
           if (_location.point != null)
             button(
               Icons.my_location_rounded,
@@ -1281,386 +1380,214 @@ class _MapHomePageState extends State<MapHomePage> {
     return '${fmt.placesCount(_total)} $where$shown';
   }
 
-  Widget _listContent() {
-    if (_error != null && _places.isEmpty) {
-      return MessageView(
-        icon: Icons.cloud_off_rounded,
-        title: 'Nie udało się wczytać miejsc',
-        message: _error,
-        onRetry: _reload,
-      );
-    }
-    if (!_loading && _places.isEmpty) {
-      return MessageView(
-        icon: Icons.search_off_rounded,
-        title: 'Brak miejscówek w tym obszarze',
-        message: _hasAnyFilter
-            ? 'Zmień filtry albo przesuń mapę.'
-            : 'Oddal lub przesuń mapę, żeby zobaczyć więcej.',
-        onRetry: _hasAnyFilter ? _clearFilters : null,
-      );
-    }
-    return Column(
-      children: <Widget>[
-        for (final place in _places)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: SpotListTile(
-              key: ValueKey<String>('spot-${place.id}'),
-              place: place,
-              distanceM: _distanceTo(place),
-              onTap: () => _openDetails(place),
+  Widget _results({ScrollController? controller, bool mobile = false}) {
+    final sorted = [..._places];
+    final index = sorted.indexWhere((p) => p.id == _selectedId);
+    if (index > 0) sorted.insert(0, sorted.removeAt(index));
+    return ListView.builder(
+      controller: controller,
+      padding: EdgeInsets.fromLTRB(18, mobile ? 0 : 12, 18, 18),
+      itemCount: 1 + (sorted.isEmpty ? 1 : sorted.length),
+      itemBuilder: (context, i) {
+        if (i == 0)
+          return Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Miejsca w okolicy',
+                  style: TextStyle(
+                    fontSize: mobile ? 23 : 27,
+                    letterSpacing: -1,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _listSubtitle,
+                  key: const ValueKey('places-count'),
+                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                ),
+                if (_error != null && sorted.isNotEmpty)
+                  TextButton(
+                    onPressed: _reload,
+                    child: const Text('Widoczne są poprzednie wyniki · Ponów'),
+                  ),
+              ],
             ),
-          ),
-        if (_places.length < _total)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              'Przybliż mapę, żeby zobaczyć resztę miejsc.',
-              style: TextStyle(fontSize: 12, color: AppColors.muted),
-            ),
-          ),
-      ],
+          );
+        if (sorted.isEmpty) {
+          if (_loading) return const _LoadingPlace();
+          if (_error != null)
+            return MessageView(
+              icon: Icons.cloud_off_outlined,
+              title: 'Nie udało się wczytać miejsc',
+              message: _error,
+              onRetry: _reload,
+            );
+          return MessageView(
+            icon: Icons.search_off,
+            title: 'Brak miejsc w tym obszarze',
+            actionLabel: _hasAnyFilter ? 'Wyczyść filtry' : 'Oddal mapę',
+            onRetry: _hasAnyFilter
+                ? _clearFilters
+                : () {
+                    _mapController.move(
+                      _mapController.camera.center,
+                      math.max(4, _mapController.camera.zoom - 1),
+                    );
+                    _reload();
+                  },
+          );
+        }
+        final p = sorted[i - 1];
+        return SpotListTile(
+          key: ValueKey('spot-${p.id}'),
+          place: p,
+          selected: p.id == _selectedId,
+          onIntent: (active) => _prefetch(p, active),
+          distanceM: _distanceTo(p),
+          onTap: () => _openDetails(p),
+        );
+      },
     );
   }
 
-  Widget _spotSheet() {
-    return DraggableScrollableSheet(
-      controller: _sheetController,
-      initialChildSize: _sheetMin,
-      minChildSize: _sheetMin,
-      maxChildSize: _sheetMax,
-      snap: true,
-      snapSizes: const <double>[_sheetMin, _sheetMax],
-      builder: (BuildContext context, ScrollController scrollController) =>
-          NotificationListener<DraggableScrollableNotification>(
-            onNotification: (DraggableScrollableNotification notification) {
-              final expanded = notification.extent > 0.42;
-              if (expanded != _sheetExpanded) {
-                setState(() => _sheetExpanded = expanded);
-              }
-              return false;
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              decoration: BoxDecoration(
-                color: _sheetExpanded ? AppColors.background : AppColors.sheet,
-                borderRadius: _sheetExpanded
-                    ? BorderRadius.zero
-                    : const BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: _sheetExpanded
-                    ? null
-                    : const <BoxShadow>[
-                        BoxShadow(
-                          color: AppColors.sheetShadow,
-                          blurRadius: 12,
-                          offset: Offset(0, -2),
-                        ),
-                      ],
-              ),
-              child: Stack(
-                children: <Widget>[
-                  ListView(
-                    controller: scrollController,
-                    scrollCacheExtent: const ScrollCacheExtent.pixels(1600),
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 92),
-                    children: <Widget>[
-                      const SizedBox(height: 22),
-                      Row(
-                        children: <Widget>[
-                          const Expanded(
-                            child: Text(
-                              'Focus Map',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.ink,
-                              ),
-                            ),
-                          ),
-                          if (_loading)
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          if (_isAdmin) ...<Widget>[
-                            const SizedBox(width: 8),
-                            OutlinePill(
-                              key: const ValueKey<String>('open-admin'),
-                              label: 'Panel admina',
-                              height: 28,
-                              leading: const Icon(
-                                Icons.admin_panel_settings_outlined,
-                                size: 15,
-                              ),
-                              onPressed: _openAdmin,
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 7),
-                      Text(
-                        _listSubtitle,
-                        key: const ValueKey<String>('places-count'),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.muted,
-                        ),
-                      ),
-                      if (_sheetExpanded) ...<Widget>[
-                        const SizedBox(height: 18),
-                        _listContent(),
-                      ],
-                    ],
-                  ),
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 44,
-                    child: GestureDetector(
-                      key: const ValueKey<String>('spot-sheet-handle'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _setSpotSheetExpanded(!_sheetExpanded),
-                      onVerticalDragEnd: (DragEndDetails details) {
-                        final velocity = details.primaryVelocity ?? 0;
-                        if (velocity < -80) {
-                          _setSpotSheetExpanded(true);
-                        } else if (velocity > 80) {
-                          _setSpotSheetExpanded(false);
-                        } else {
-                          _setSpotSheetExpanded(!_sheetExpanded);
-                        }
-                      },
-                      child: Center(
-                        child: Container(
-                          width: 46,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: AppColors.sheetHandle,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
+  Widget _spotSheet() => DraggableScrollableSheet(
+    controller: _sheetController,
+    initialChildSize: _sheetMin,
+    minChildSize: _sheetMin,
+    maxChildSize: _sheetMax,
+    snap: true,
+    snapSizes: const [_sheetMin, 0.52, _sheetMax],
+    builder: (context, scroll) => Material(
+      color: AppColors.background,
+      elevation: 6,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          InkWell(
+            key: const ValueKey('spot-sheet-handle'),
+            onTap: () => _setSpotSheetExpanded(_sheetController.size < 0.6),
+            child: Tooltip(
+              message: 'Rozwiń lub zwiń listę',
+              child: SizedBox(
+                width: double.infinity,
+                height: 26,
+                child: Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.sheetHandle,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ),
-                  Positioned(
-                    right: 16,
-                    bottom: 16,
-                    child: Material(
-                      color: AppColors.accent,
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        key: const ValueKey<String>('add-place'),
-                        customBorder: const CircleBorder(),
-                        onTap: _openAddPlace,
-                        child: const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: Icon(
-                            Icons.add_rounded,
-                            size: 25,
-                            color: AppColors.white,
+                ),
+              ),
+            ),
+          ),
+          Expanded(child: _results(controller: scroll, mobile: true)),
+        ],
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => CallbackShortcuts(
+    bindings: {
+      const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+          _openSearch,
+      const SingleActivator(LogicalKeyboardKey.keyK, meta: true): _openSearch,
+    },
+    child: Focus(
+      autofocus: true,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final wide = c.maxWidth >= 820;
+              return Column(
+                children: [
+                  _brandBar(wide),
+                  if (!wide) _header(),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        if (wide)
+                          SizedBox(
+                            width: 400,
+                            child: Column(
+                              children: [
+                                const SizedBox(height: 10),
+                                _header(),
+                                const Divider(height: 1),
+                                Expanded(child: _results()),
+                              ],
+                            ),
+                          ),
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, area) => Stack(
+                              children: [
+                                Positioned.fill(child: _map()),
+                                _mapButtons(
+                                  wide ? 24 : area.maxHeight * _sheetMin + 16,
+                                ),
+                                if (!wide) _spotSheet(),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = _places
-        .where((PlaceSummary p) => p.id == _selectedId)
-        .firstOrNull;
-    return Scaffold(
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final sheetTop = constraints.maxHeight * _sheetMin;
-            return Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                Positioned.fill(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    color: _sheetExpanded
-                        ? AppColors.background
-                        : AppColors.transparent,
-                  ),
-                ),
-                AnimatedOpacity(
-                  duration: const Duration(milliseconds: 180),
-                  opacity: _sheetExpanded ? 0 : 1,
-                  child: IgnorePointer(ignoring: _sheetExpanded, child: _map()),
-                ),
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: SafeArea(top: true, bottom: false, child: _header()),
-                ),
-                if (!_sheetExpanded && _error != null && _places.isNotEmpty)
-                  Positioned(
-                    top: 190,
-                    left: 16,
-                    right: 16,
-                    child: Material(
-                      color: AppColors.closed,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Text(
-                          _error!,
-                          style: const TextStyle(
-                            color: AppColors.white,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                _mapButtons(sheetTop + (selected != null ? 172 : 16)),
-                if (selected != null)
-                  Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: sheetTop + 10,
-                    child: _PlacePreviewCard(
-                      place: selected,
-                      distanceM: _distanceTo(selected),
-                      travelTimes: switch ((
-                        widget.travelTimes,
-                        _location.point,
-                      )) {
-                        (final service?, final origin?) => TravelTimesLine(
-                          service: service,
-                          from: origin,
-                          to: selected.location,
-                          fontSize: 11,
-                        ),
-                        _ => null,
-                      },
-                      onTap: () => _openDetails(selected),
-                      onClose: () => setState(() => _selectedId = null),
-                    ),
-                  ),
-                _spotSheet(),
-              ],
-            );
-          },
         ),
       ),
-    );
-  }
+    ),
+  );
 }
 
-/// Floating card above the list after tapping a pin.
-class _PlacePreviewCard extends StatelessWidget {
-  const _PlacePreviewCard({
-    required this.place,
-    required this.onTap,
-    required this.onClose,
-    this.distanceM,
-    this.travelTimes,
-  });
-
-  final PlaceSummary place;
-  final double? distanceM;
-  final Widget? travelTimes;
-  final VoidCallback onTap;
-  final VoidCallback onClose;
-
+class _LoadingPlace extends StatelessWidget {
+  const _LoadingPlace();
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      key: const ValueKey<String>('place-preview'),
-      color: AppColors.white,
-      elevation: 6,
-      shadowColor: AppColors.shadow,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: <Widget>[
-              PlaceImage(
-                url: place.thumbnailUrl,
-                width: 96,
-                height: 96,
-                radius: 14,
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      place.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    RatingLine(rating: place.rating),
-                    const SizedBox(height: 4),
-                    Text(
-                      [
-                        place.address.short,
-                        if (distanceM != null) fmt.distance(distanceM!),
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    OpenStatusLine(place: place, fontSize: 11),
-                    if (travelTimes case final line?) ...<Widget>[
-                      const SizedBox(height: 4),
-                      line,
-                    ],
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Zobacz szczegóły ›',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
+  Widget build(BuildContext context) => Semantics(
+    label: 'Wczytywanie miejsc',
+    child: Row(
+      children: [
+        Container(
+          width: 90,
+          height: 94,
+          decoration: BoxDecoration(
+            color: AppColors.field,
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final w in [150.0, 95.0, 120.0])
+                Container(
+                  width: w,
+                  height: 10,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  color: AppColors.field,
                 ),
-              ),
-              IconButton(
-                tooltip: 'Zamknij',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.close_rounded, size: 18),
-                onPressed: onClose,
-              ),
             ],
           ),
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }
 
 class SpotListTile extends StatelessWidget {
@@ -1668,9 +1595,13 @@ class SpotListTile extends StatelessWidget {
     required this.place,
     required this.onTap,
     this.distanceM,
+    this.selected = false,
+    this.onIntent,
     super.key,
   });
 
+  final bool selected;
+  final ValueChanged<bool>? onIntent;
   final PlaceSummary place;
   final double? distanceM;
   final VoidCallback onTap;
@@ -1679,128 +1610,106 @@ class SpotListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final price = fmt.priceLabel(place.priceRange, place.usagePrice);
     final atmosphere = place.atmosphere;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: AppColors.divider)),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: selected ? AppColors.primary : AppColors.divider,
+            width: selected ? 1.5 : 1,
+          ),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Stack(
-              children: <Widget>[
-                PlaceImage(url: place.thumbnailUrl, width: 126, height: 126),
-                if (atmosphere != null)
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: Pill(
-                      atmosphere.label,
-                      color: AppColors.placeMarker,
-                      textColor: AppColors.white,
-                    ),
-                  ),
-                if (place.photoCount > 1)
-                  Positioned(
-                    right: 6,
-                    bottom: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.imageOverlay,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          const Icon(
-                            Icons.photo_library_outlined,
-                            size: 10,
-                            color: AppColors.white,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            '${place.photoCount}',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: AppColors.white,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          onHover: onIntent,
+          onFocusChange: onIntent,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                PlaceImage(
+                  url: place.thumbnailUrl,
+                  width: 86,
+                  height: 102,
+                  radius: 10,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              place.name,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                height: 1.2,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.4,
+                              ),
                             ),
                           ),
+                          if (place.rating.average != null) ...[
+                            const SizedBox(width: 5),
+                            const Icon(
+                              Icons.star_rounded,
+                              color: Color(0xffa34b20),
+                              size: 15,
+                            ),
+                            Text(
+                              fmt.decimal(place.rating.average!),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 7, right: 3),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      place.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: AppColors.ink,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    RatingLine(rating: place.rating),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: <Widget>[
-                        const Icon(
-                          Icons.location_on_outlined,
-                          size: 12,
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          place.address.short,
+                          if (distanceM != null) fmt.distance(distanceM!),
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
                           color: AppColors.muted,
                         ),
-                        const SizedBox(width: 3),
-                        Expanded(
-                          child: Text(
-                            [
-                              place.address.short,
-                              if (distanceM != null) fmt.distance(distanceM!),
-                            ].join(' · '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: AppColors.muted,
-                            ),
-                          ),
+                      ),
+                      const SizedBox(height: 5),
+                      OpenStatusLine(place: place, fontSize: 12),
+                      const SizedBox(height: 7),
+                      Text(
+                        [
+                          if (atmosphere != null) atmosphere.label,
+                          if (place.amenities.powerOutlets == true) 'Gniazdka',
+                          if (place.amenities.wifi == true) 'Wi-Fi',
+                          if (price != null) price,
+                        ].join(' · '),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.ink,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    OpenStatusLine(place: place),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: AmenityBadges(amenities: place.amenities),
-                        ),
-                        if (price != null) ...<Widget>[
-                          const SizedBox(width: 6),
-                          Pill(price),
-                        ],
-                      ],
-                    ),
-                  ],
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

@@ -105,7 +105,7 @@ void main() {
   testWidgets('kafelki mapy są widoczne od razu po starcie, bez przesuwania', (tester) async {
     await startApp(tester, firstSize: const Size(900, 1000));
     await settle(tester);
-    expectTilesShown(tester, zoom: 7);
+    expectTilesShown(tester, zoom: 14);
   });
 
   testWidgets('kafelki są widoczne, gdy ekran ma rozmiar dopiero po starcie', (tester) async {
@@ -114,7 +114,7 @@ void main() {
     await tester.pump();
     tester.view.physicalSize = const Size(900, 1000);
     await settle(tester);
-    expectTilesShown(tester, zoom: 7);
+    expectTilesShown(tester, zoom: 14);
   });
 
   testWidgets('start z lokalizacji urządzenia: kafelki okolicy są widoczne bez przesuwania', (tester) async {

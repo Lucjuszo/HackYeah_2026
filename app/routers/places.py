@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import Header, APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.auth import CurrentUser, OptionalUser
 from app.config import settings
@@ -114,12 +114,12 @@ async def _search(db: Db, f: repo.PlaceFilter, sort: PlaceSort | None, limit: in
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_place(place: PlaceCreate, db: Db, user: CurrentUser) -> Place:
+async def create_place(place: PlaceCreate, db: Db, user: CurrentUser, idempotency_key: Annotated[str | None, Header(min_length=1, max_length=80)] = None) -> Place:
     """Places added by regular users wait for an admin's approval (`approved: false`) before they show up."""
     create_limiter.check(user)
     approved = user.is_admin or not settings.places_require_approval
     try:
-        return await repo.create_place(db, place, user.id, approved=approved)
+        return await repo.create_place(db, place, user.id, approved=approved, request_key=idempotency_key)
     except repo.PlaceAlreadyExists:
         raise _osm_conflict(place.osm)
 

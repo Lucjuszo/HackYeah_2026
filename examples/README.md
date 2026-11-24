@@ -19,7 +19,7 @@ Gotowa kolekcja Postmana: [`postman/`](../postman/README.md).
 
 ```bash
 python scripts/import_osm.py     # 30 prawdziwych kawiarni i restauracji z Krakowa (OSM) + dane mock
-python scripts/seed.py           # albo: 6 wymyślonych miejsc z examples/places/
+python scripts/seed.py           # albo: 6 fikcyjnych miejsc i 3 rzeczywiste biblioteki w Gdańsku
 ```
 
 Oba skrypty piszą do bazy wybranej w `.env`, oznaczają wszystko `is_mock: true` i przed startem
@@ -36,6 +36,11 @@ Dane mapy © OpenStreetMap contributors, licencja ODbL.
 | `04-nocna-stolowka.json` | otwarte tylko w nocy, przedziały rozbite o północy |
 | `05-antykwariat-i-kawa.json` | niepełne dane: większość udogodnień nieznana (`null`) |
 | `06-kawiarnia-na-powislu.json` | Warszawa, do testowania filtra odległości |
+| `07-gdansk-manhattan.json` | Biblioteka Manhattan, al. Grunwaldzka 82 · [karta filii](https://wbpg.org.pl/filia/biblioteka-manhattan/) |
+| `08-gdansk-pod-zolwiem.json` | Biblioteka pod Żółwiem, ul. św. Ducha 111/113 · [karta filii](https://wbpg.org.pl/filia/biblioteka-pod-zolwiem/) |
+| `09-gdansk-lawendowa.json` | Biblioteka Lawendowa, ul. Lawendowe Wzgórze 5 · [karta filii](https://wbpg.org.pl/filia/biblioteka-lawendowa/) |
+
+Adresy, pinezki i regularne godziny otwarcia gdańskich filii pochodzą z kart WiMBP. Seed traktuje te rekordy jako dane demonstracyjne i pozostawia ich oceny oraz opinie puste.
 
 ---
 

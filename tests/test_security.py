@@ -42,7 +42,7 @@ class TestPendingPlaceIsHidden:
     def pending_with_content(self, client, pending) -> dict:
         photo = upload(client, pending)
         assert photo.status_code == 201, photo.text
-        comment = client.post(f"/places/{pending}/comments", json={"text": "Jeszcze nikt nie widzi"})
+        comment = client.post(f"/places/{pending}/comments", json={"text": "Jeszcze nikt nie widzi", "score": 4})
         assert comment.status_code == 201, comment.text
         assert client.put(f"/places/{pending}/ratings/me", json={"score": 4}).status_code == 200
         return {"id": pending, "photo": photo.json()["id"], "comment": comment.json()["id"]}
@@ -73,7 +73,7 @@ class TestPendingPlaceIsHidden:
         comment = f"{base}/comments/{pending_with_content['comment']}"
         attempts = [
             client.patch(base, json={"name": "Przejęte"}, headers=STRANGER),
-            client.post(f"{base}/comments", json={"text": "spam"}, headers=STRANGER),
+            client.post(f"{base}/comments", json={"text": "spam", "score": 4}, headers=STRANGER),
             client.put(f"{comment}/like", headers=STRANGER),
             client.put(f"{base}/ratings/me", json={"score": 1}, headers=STRANGER),
             upload(client, pending_with_content["id"], headers=STRANGER),
@@ -94,7 +94,7 @@ class TestPendingPlaceIsHidden:
         assert client.put(f"/admin/places/{place_id}/approval", json={"approved": True}, headers=ADMIN).status_code == 200
         for url in self.reads(pending_with_content):
             assert client.get(url, headers=ANONYMOUS).status_code == 200, url
-        assert client.post(f"/places/{place_id}/comments", json={"text": "ok"}, headers=STRANGER).status_code == 201
+        assert client.post(f"/places/{place_id}/comments", json={"text": "ok", "score": 4}, headers=STRANGER).status_code == 201
 
 
 class TestRequestBodyLimit:
@@ -196,8 +196,8 @@ class TestRateLimits:
             url = f"/places/{place.json()['id']}"
             assert client.patch(url, json={"name": "a"}, headers=ADMIN).status_code == 200
             assert client.patch(url, json={"name": "b"}, headers=ADMIN).status_code == 200
-            assert client.post(f"{url}/comments", json={"text": "x"}, headers=ADMIN).status_code == 201
-            assert client.post(f"{url}/comments", json={"text": "y"}, headers=ADMIN).status_code == 201
+            assert client.post(f"{url}/comments", json={"text": "x", "score": 4}, headers=ADMIN).status_code == 201
+            assert client.post(f"{url}/comments", json={"text": "y", "score": 4}, headers=ADMIN).status_code == 201
             assert upload(client, place.json()["id"], headers=ADMIN).status_code == 201
             assert upload(client, place.json()["id"], headers=ADMIN).status_code == 201
         # The same limits still apply to a regular user.

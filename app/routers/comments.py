@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import Header, APIRouter, HTTPException, Query, Response, status
 
 from app.auth import CurrentUser
 from app.config import settings
@@ -24,7 +24,7 @@ def _forbidden() -> HTTPException:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_comment(place_id: VisiblePlaceId, body: CommentCreate, db: Db, user: CurrentUser) -> Comment:
+async def create_comment(place_id: VisiblePlaceId, body: CommentCreate, db: Db, user: CurrentUser, idempotency_key: Annotated[str | None, Header(min_length=1, max_length=80)] = None) -> Comment:
     comment_limiter.check(user)
     return await repo.create_comment(
         db,
@@ -33,6 +33,7 @@ async def create_comment(place_id: VisiblePlaceId, body: CommentCreate, db: Db, 
         body.text,
         user_name=user.name,
         score=body.score,
+        request_key=idempotency_key,
     )
 
 

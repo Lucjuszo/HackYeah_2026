@@ -4,6 +4,7 @@ from bson import ObjectId
 from pymongo import ReturnDocument
 from pymongo.asynchronous.database import AsyncDatabase
 
+from app.repositories.submissions import insert_creation
 from app.db import parse_object_id, utcnow
 from app.models.comment import Comment
 from app.models.user import AuthUser
@@ -98,6 +99,7 @@ async def create_comment(
     user_id: str,
     text: str,
     *,
+    request_key: str | None = None,
     score: int,
     user_name: str | None = None,
     is_mock: bool = False,
@@ -113,8 +115,7 @@ async def create_comment(
         "likes": 0,  # stored, not missing: a missing field would sort below a liked-then-unliked 0
         "liked_by": [],
     }
-    result = await db[COLLECTION].insert_one(doc)
-    doc["_id"] = result.inserted_id
+    doc = await insert_creation(db[COLLECTION], doc, user=user_id, key=request_key, payload=[text, score], scope=str(place_id))
     return await _one(db, doc)
 
 

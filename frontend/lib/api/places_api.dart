@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
@@ -9,6 +10,29 @@ const String defaultApiUrl = String.fromEnvironment(
   'API_URL',
   defaultValue: 'http://localhost:8000',
 );
+
+/// Keep the same key when retrying an unchanged draft.
+class Submission {
+  String? _body;
+  String? _key;
+  String keyFor(Object data) {
+    final body = jsonEncode(data);
+    if (body != _body) {
+      _body = body;
+      final random = Random.secure();
+      _key = List.generate(
+        16,
+        (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+      ).join();
+    }
+    return _key!;
+  }
+
+  void clear() {
+    _body = null;
+    _key = null;
+  }
+}
 
 class ApiException implements Exception {
   const ApiException(this.message, {this.statusCode});
@@ -131,9 +155,11 @@ class PlacesApi {
     String path, {
     required String token,
     Object? body,
+    String? requestKey,
   }) async {
     final request = http.Request(method, apiUrl.resolve(path))
       ..headers['Authorization'] = 'Bearer $token';
+    if (requestKey != null) request.headers['Idempotency-Key'] = requestKey;
     if (body != null) {
       request
         ..headers['Content-Type'] = 'application/json'
@@ -214,7 +240,39 @@ class PlacesApi {
   }
 
   /// A place waiting for approval needs the [token] of its author or an admin.
-  Future<Place> getPlace(String id, {String? token}) async {
+  final _warmPlaces = <(String, String?), (DateTime, Place)>{};
+  final _pendingPlaces = <(String, String?), Future<Place>>{};
+  Place? cachedPlace(String id, {String? token}) {
+    final entry = _warmPlaces[(id, token)];
+    return entry != null &&
+            DateTime.now().difference(entry.$1) < const Duration(minutes: 2)
+        ? entry.$2
+        : null;
+  }
+
+  Future<void> prefetchPlace(String id, {String? token}) async {
+    if (cachedPlace(id, token: token) == null) await getPlace(id, token: token);
+  }
+
+  Future<Place> getPlace(String id, {String? token}) {
+    final key = (id, token);
+    return _pendingPlaces.putIfAbsent(
+      key,
+      () => _fetchPlace(id, token)
+          .then((place) {
+            _warmPlaces.remove(key);
+            _warmPlaces[key] = (DateTime.now(), place);
+            if (_warmPlaces.length > 12)
+              _warmPlaces.remove(_warmPlaces.keys.first);
+            return place;
+          })
+          .whenComplete(() {
+            _pendingPlaces.remove(key);
+          }),
+    );
+  }
+
+  Future<Place> _fetchPlace(String id, String? token) async {
     final (body, _) = await _get(
       'places/${Uri.encodeComponent(id)}',
       null,
@@ -309,11 +367,13 @@ class PlacesApi {
     String text, {
     required String token,
     int? score,
+    String? requestKey,
   }) async {
     final body = await _send(
       'POST',
       '${_placePath(placeId)}/comments',
       token: token,
+      requestKey: requestKey,
       body: <String, Object?>{'text': text, 'score': ?score},
     );
     return Comment.fromJson(body! as Json);
@@ -376,11 +436,16 @@ class PlacesApi {
   }
 
   /// POST /places (logged in). Returns the created place.
-  Future<Place> createPlace(NewPlace place, {required String token}) async {
+  Future<Place> createPlace(
+    NewPlace place, {
+    required String token,
+    String? requestKey,
+  }) async {
     final body = await _send(
       'POST',
       'places',
       token: token,
+      requestKey: requestKey,
       body: place.toJson(),
     );
     return Place.fromJson(body! as Json, apiUrl: apiUrl);

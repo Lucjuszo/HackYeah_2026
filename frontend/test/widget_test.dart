@@ -87,10 +87,9 @@ Future<FakeBackend> pumpApp(
 }
 
 Future<void> expandSheet(WidgetTester tester) async {
-  await tester.drag(
-    find.byKey(const ValueKey<String>('spot-sheet-handle')),
-    const Offset(0, -600),
-  );
+  final handle=find.byKey(const ValueKey<String>('spot-sheet-handle'));
+  if(handle.evaluate().isEmpty)return; // wide layout keeps the list visible
+  await tester.tap(handle);
   await tester.pumpAndSettle();
 }
 
@@ -120,17 +119,17 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(backend.searches, hasLength(1)); // one search at start, not one per startup event
 
-      expect(find.text('2 miejsca na mapie'), findsOneWidget);
+      expect(find.text('1 miejsce na mapie'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('marker-p2')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('marker-p2')), findsNothing);
 
       await expandSheet(tester);
       expect(find.text('Kawiarnia Pod Kodem'), findsOneWidget);
-      expect(find.text('Czytelnia'), findsOneWidget);
+      expect(find.text('Czytelnia'), findsNothing);
       expect(find.text('4,6'), findsWidgets);
       expect(text('Floriańska 15, Kraków'), findsWidgets);
       expect(text('Otwarte teraz'), findsWidgets);
-      expect(text('Zamknięte'), findsWidgets);
+      expect(text('Zamknięte'), findsNothing);
     });
 
     displayTest('mapa wczytuje miejsca od razu, choć rozmiar ekranu był znany dopiero po starcie', (tester) async {
@@ -158,19 +157,19 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(backend.searches, hasLength(1));
-      expect(find.text('2 miejsca na mapie'), findsOneWidget);
+      expect(find.text('1 miejsce na mapie'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('marker-p2')), findsOneWidget);
-      // The search covers the whole of Poland, not a degenerate zero-sized area.
+      expect(find.byKey(const ValueKey<String>('marker-p2')), findsNothing);
+      // The search covers the local area in Kraków, not a degenerate zero-sized area.
       final bbox = backend.lastSearch.queryParameters['bbox']!.split(',').map(double.parse).toList();
-      expect(bbox[2] - bbox[0], greaterThan(5));
-      expect(bbox[3] - bbox[1], greaterThan(5));
+      expect(bbox[2] - bbox[0], inInclusiveRange(0.001, 0.2));
+      expect(bbox[3] - bbox[1], inInclusiveRange(0.001, 0.2));
     });
 
     displayTest('pusta lista', (tester) async {
       await pumpApp(tester, backend: FakeBackend(places: []));
       await expandSheet(tester);
-      expect(find.text('Brak miejscówek w tym obszarze'), findsOneWidget);
+      expect(find.text('Brak miejsc w tym obszarze'), findsOneWidget);
     });
 
     displayTest('błąd serwera i ponowna próba', (tester) async {
@@ -189,7 +188,7 @@ void main() {
       await pumpApp(tester);
       await tester.tap(find.byKey(const ValueKey<String>('marker-p1')));
       await tester.pumpAndSettle();
-      final preview = find.byKey(const ValueKey<String>('place-preview'));
+      final preview = find.byKey(const ValueKey<String>('spot-p1'));
       expect(preview, findsOneWidget);
       expect(
         find.descendant(
@@ -204,14 +203,14 @@ void main() {
   group('filtry', () {
     displayTest('kafelki filtrów są widoczne', (tester) async {
       await pumpApp(tester);
-      for (final label in ['Oceny', 'Wi-Fi', 'Sortuj', 'Ceny', 'Filtruj']) {
-        expect(find.text(label), findsOneWidget);
+      for (final label in ['Cicho', 'Gniazdka', 'Otwarte']) {
+        expect(find.text(label), findsWidgets);
       }
     });
 
     displayTest('Filtruj pokazuje dodatkowe filtry', (tester) async {
       await pumpApp(tester);
-      await tester.tap(find.text('Filtruj'));
+      await tester.tap(find.byTooltip('Wszystkie filtry'));
       await tester.pumpAndSettle();
       expect(find.text('Otwarte teraz'), findsWidgets);
       expect(find.text('Gniazdka'), findsWidgets);
@@ -238,6 +237,8 @@ void main() {
 
     displayTest('menu filtra pokazuje opcje', (tester) async {
       await pumpApp(tester);
+      await tester.tap(find.byTooltip('Wszystkie filtry'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Ceny'));
       await tester.pumpAndSettle();
       expect(find.text('Bezpłatne'), findsOneWidget);
@@ -286,19 +287,21 @@ void main() {
       expect(find.byKey(const ValueKey<String>('marker-p1')), findsOneWidget);
     });
 
-    displayTest('bez zgody na GPS na starcie widać całą Polskę', (tester) async {
+    displayTest('bez zgody na GPS na starcie widać Kraków', (tester) async {
       await pumpApp(
         tester,
         locateOnStart: true,
         location: FakeLocationService(failure: const LocationFailure('Brak zgody na lokalizację.')),
       );
-      expect(find.text('Lokalizacja'), findsOneWidget);
-      expect(find.text('2 miejsca na mapie'), findsOneWidget);
+      expect(find.text('Kraków'), findsOneWidget);
+      expect(find.text('1 miejsce na mapie'), findsOneWidget);
     });
 
     displayTest('promień szuka wokół mojej lokalizacji', (tester) async {
       final backend = await pumpApp(tester);
-      await tester.tap(find.byKey(const ValueKey<String>('radius-picker-trigger')));
+      await tester.tap(find.byTooltip('Wszystkie filtry'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Promień'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('5 km'));
       await tester.pumpAndSettle();
@@ -673,7 +676,14 @@ void main() {
       await tapKey(tester, 'comment-menu-$id');
       await tester.tap(find.text('Usuń').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey<String>('confirm-delete')));
+      expect(find.text('Cofnij'),findsOneWidget);
+      await tester.tap(find.text('Cofnij'));
+      await tester.pumpAndSettle();
+      expect(find.text('Poprawiona wersja'),findsOneWidget);
+      await tapKey(tester, 'comment-menu-$id');
+      await tester.tap(find.text('Usuń').last);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds:6));
       await tester.pumpAndSettle();
       expect(find.text('Poprawiona wersja'), findsNothing);
       expect(backend.commentsOf('p1'), hasLength(3));
@@ -731,7 +741,7 @@ void main() {
 
   group('dodawanie miejsca', () {
     Future<void> openForm(WidgetTester tester) async {
-      await tester.tap(find.byIcon(Icons.add_rounded));
+      await tester.tap(find.byKey(const ValueKey('add-place')));
       await tester.pumpAndSettle(const Duration(seconds: 1));
       expect(find.widgetWithText(AppBar, 'Dodaj miejsce'), findsOneWidget);
     }

@@ -49,6 +49,9 @@ REVIEWS: dict[str, list[tuple[str, int, str | None]]] = {
         ("anna", 4, "Klimatyczne miejsce, mało stolików."),
     ],
     "06-kawiarnia-na-powislu.json": [],
+    "07-gdansk-manhattan.json": [],
+    "08-gdansk-pod-zolwiem.json": [],
+    "09-gdansk-lawendowa.json": [],
 }
 
 

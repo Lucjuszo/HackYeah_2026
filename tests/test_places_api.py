@@ -130,3 +130,17 @@ def test_indexes_created(client, db):
     assert any(ix["key"].get("location") == "2dsphere" for ix in indexes.values())
     osm_index = next(ix for ix in indexes.values() if "osm.id" in ix["key"])
     assert osm_index["unique"] is True
+
+def test_retries_return_the_same_place_and_comment(client, minimal_payload):
+    headers = {"Idempotency-Key": "unchanged-draft"}
+    first = client.post("/places", json=minimal_payload, headers=headers)
+    retry = client.post("/places", json=minimal_payload, headers=headers)
+    assert retry.status_code == first.status_code == 201
+    place_id = first.json()["id"]
+    assert retry.json()["id"] == place_id
+    url = f"/places/{place_id}/comments"
+    one = client.post(url, json={"text": "Quiet", "score": 4}, headers=headers)
+    two = client.post(url, json={"text": "Quiet", "score": 4}, headers=headers)
+    assert one.status_code == two.status_code == 201
+    assert one.json()["id"] == two.json()["id"]
+    assert client.post(url, json={"text": "Changed", "score": 4}, headers=headers).status_code == 409

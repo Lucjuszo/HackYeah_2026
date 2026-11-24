@@ -1,3 +1,5 @@
+import 'dart:ui' show FontFeature;
+
 import 'package:flutter/material.dart';
 
 import '../api/models.dart';
@@ -114,6 +116,7 @@ class PlaceImage extends StatelessWidget {
               url!,
               width: width,
               height: height,
+              gaplessPlayback: true,
               fit: fit,
               errorBuilder: (_, _, _) => placeholder,
               loadingBuilder: (_, Widget child, ImageChunkEvent? progress) =>
@@ -152,7 +155,10 @@ class OpenStatusLine extends StatelessWidget {
             ),
         ],
       ),
-      style: TextStyle(fontSize: fontSize),
+      style: TextStyle(
+        fontSize: fontSize,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
     );
@@ -206,10 +212,16 @@ class AmenityBadges extends StatelessWidget {
 /// Place pin on the map. The selected state changes its scale, while all pins
 /// use the single brand color from [AppColors.placeMarker].
 class MapMarker extends StatelessWidget {
-  const MapMarker({required this.rating, this.selected = false, super.key});
+  const MapMarker({
+    required this.rating,
+    this.label,
+    this.selected = false,
+    super.key,
+  });
 
   final double? rating;
   final bool selected;
+  final String? label;
 
   static Color colorFor(double? rating) {
     return AppColors.placeMarker;
@@ -217,9 +229,10 @@ class MapMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = colorFor(rating);
+    final color = selected ? AppColors.primary : Colors.white;
+    const ink = AppColors.ink;
     return AnimatedScale(
-      scale: selected ? 1.18 : 1,
+      scale: selected ? 1.04 : 1,
       duration: const Duration(milliseconds: 160),
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -241,15 +254,31 @@ class MapMarker extends StatelessWidget {
             children: <Widget>[
               Icon(
                 rating == null ? Icons.local_cafe_rounded : Icons.star_rounded,
-                color: AppColors.white,
-                size: 12,
+                color: ink,
+                size: 14,
               ),
+              if (selected && label != null)
+                Flexible(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text(
+                      label!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: ink,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
               if (rating != null) ...<Widget>[
                 const SizedBox(width: 3),
                 Text(
                   fmt.decimal(rating!),
-                  style: const TextStyle(
-                    color: AppColors.white,
+                  style: TextStyle(
+                    color: ink,
                     fontWeight: FontWeight.w700,
                     fontSize: 11,
                   ),
@@ -366,6 +395,7 @@ class MessageView extends StatelessWidget {
     required this.title,
     this.message,
     this.onRetry,
+    this.actionLabel = 'Spróbuj ponownie',
     super.key,
   });
 
@@ -373,6 +403,7 @@ class MessageView extends StatelessWidget {
   final String title;
   final String? message;
   final VoidCallback? onRetry;
+  final String actionLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -401,7 +432,7 @@ class MessageView extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Spróbuj ponownie'),
+              label: Text(actionLabel),
             ),
           ],
         ],
